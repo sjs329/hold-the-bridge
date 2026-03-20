@@ -20,7 +20,7 @@ Balancing and Level Scaffold:
 - Level progression uses fixed per-level enemy quotas via each level's `enemyQuota`.
 - Level transitions now pause gameplay briefly, show a level card, and restore a portion of wall health.
 - After the last authored level, the game uses endless fallback scaling rules in `GAME_TUNING.endless`.
-- Left lane events now mix rarer gun crates with EMP crates that temporarily slow the horde.
+- Left lane events now mix rarer gun crates with slowing-field activator crates that temporarily slow the horde.
 - Multi-shot can upgrade at most once per level; additional gun crates in that level focus on fire-rate improvements.
 - Runtime debug handles:
   - `window._game.tuning`

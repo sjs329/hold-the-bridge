@@ -1,15 +1,18 @@
-import { VIEWPORT_PADDING, LANDSCAPE_ASPECT, PORTRAIT_ASPECT, GAME_TUNING, LEVEL_DEFS } from './core/config.js';
-import { clamp, lerp, collide, removeDeadInPlace } from './core/math.js';
-import { createGeometrySystem, getPerspectiveSpeedMultiplier } from './core/geometry.js';
-import { createDifficultySystem } from './core/difficulty.js';
-
 (function(){
+  const { VIEWPORT_PADDING, LANDSCAPE_ASPECT, PORTRAIT_ASPECT, GAME_TUNING, LEVEL_DEFS } = window.CoreConfig;
+  const { clamp, lerp, collide, removeDeadInPlace } = window.CoreMath;
+  const { createGeometrySystem, getPerspectiveSpeedMultiplier } = window.CoreGeometry;
+  const { createDifficultySystem } = window.CoreDifficulty;
+
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const hudEl = document.getElementById('hud');
+  const hudLevelEl = document.getElementById('hud-level');
+  const hudWaveEl = document.getElementById('hud-wave');
   const pauseButton = document.getElementById('pause-button');
   const statusEl = document.getElementById('status');
   const gameContainer = document.getElementById('game-container');
+  const FIELD_EFFECT_NAME = 'Slowing Field';
 
   let W = 800, H = 600;
   const geometry = createGeometrySystem(W, H);
@@ -442,8 +445,30 @@ import { createDifficultySystem } from './core/difficulty.js';
     return clamp(lane.gunChanceBase + (Math.max(1, currentLevel) - 1) * lane.gunChancePerLevel, lane.gunChanceBase, lane.gunChanceMax);
   }
 
+  function getFieldProjectorAnchor(){
+    const wall = getWallRectForPlayer(player);
+    return {
+      // Centered in lane and tucked just behind the wall (enemy side).
+      x: wall.x + wall.w * 0.5,
+      y: wall.y - 11
+    };
+  }
+
+  function queueFieldChargeTransfer(sourceX, sourceY){
+    const anchor = getFieldProjectorAnchor();
+    fieldChargeTransfers.push({
+      sx: sourceX,
+      sy: sourceY,
+      tx: anchor.x,
+      ty: anchor.y,
+      age: 0,
+      duration: 0.34 + Math.random() * 0.16,
+      wobble: Math.random() * Math.PI * 2
+    });
+  }
+
   function getEnemySlowMultiplier(){
-    return empTimer > 0 ? GAME_TUNING.leftLane.empSlowMultiplier : 1;
+    return slowFieldTimer > 0 ? GAME_TUNING.leftLane.fieldSlowMultiplier : 1;
   }
 
   function clearRuntimeCaches(){
@@ -475,7 +500,7 @@ import { createDifficultySystem } from './core/difficulty.js';
       level++;
       levelSpawned = 0;
       levelMultiShotUpgrades = 0;
-      empTimer = 0;
+      slowFieldTimer = 0;
       const nextDifficulty = getDifficultyForLevel(level);
       wallMax = nextDifficulty.wallMaxHealth;
       wallHealth = wallBroken ? 0 : Math.max(1, Math.round(wallMax * wallRatio));
@@ -489,7 +514,9 @@ import { createDifficultySystem } from './core/difficulty.js';
   let level = 1;
   let levelSpawned = 0;
   let levelMultiShotUpgrades = 0;
-  let empTimer = 0;
+  let slowFieldTimer = 0;
+  let fieldProjectorCharge = 0;
+  let fieldChargeTransfers = [];
   let notifPopup = null, notifPopupTimer = 0;
   let transientStatusTimer = 0;
   let pickupFlashTimer = 0;
@@ -510,6 +537,21 @@ import { createDifficultySystem } from './core/difficulty.js';
     if(pickupFlashTimer > 0){
       pickupFlashTimer = Math.max(0, pickupFlashTimer - dt);
       if(pickupFlashTimer === 0) canvas.style.boxShadow = '';
+    }
+
+    if(slowFieldTimer > 0){
+      // Keep a baseline glow while the slowing field remains online.
+      fieldProjectorCharge = Math.min(1, fieldProjectorCharge + dt * 0.22);
+    }
+    fieldProjectorCharge = Math.max(0, fieldProjectorCharge - dt * 0.42);
+
+    for(let i = fieldChargeTransfers.length - 1; i >= 0; i--){
+      const transfer = fieldChargeTransfers[i];
+      transfer.age += dt;
+      if(transfer.age >= transfer.duration){
+        fieldProjectorCharge = Math.min(1, fieldProjectorCharge + 0.36);
+        fieldChargeTransfers.splice(i, 1);
+      }
     }
 
     if(transientStatusTimer > 0){
@@ -553,14 +595,16 @@ import { createDifficultySystem } from './core/difficulty.js';
     notifPopup = 'Maxed';
   }
 
-  function applyUnlockedPowerup(type, gunCap){
+  function applyUnlockedPowerup(type, gunCap, sourcePoint){
     triggerPickupFlash(0.3);
     if(type === 'gun'){
       applyGunPowerup(gunCap);
     } else {
-      empTimer = Math.max(empTimer, GAME_TUNING.leftLane.empDuration);
-      showTransientStatus('EMP Pulse! Horde Slowed', 1.2);
-      notifPopup = 'EMP';
+      slowFieldTimer = Math.max(slowFieldTimer, GAME_TUNING.leftLane.fieldDuration);
+      if(sourcePoint) queueFieldChargeTransfer(sourcePoint.x, sourcePoint.y);
+      fieldProjectorCharge = Math.min(1, fieldProjectorCharge + 0.45);
+      showTransientStatus(`${FIELD_EFFECT_NAME} Active! Horde Slowed`, 1.2);
+      notifPopup = 'Field Online';
     }
     notifPopupTimer = 1.2;
     updateUI();
@@ -611,7 +655,11 @@ import { createDifficultySystem } from './core/difficulty.js';
           powerup.hit();
         } else {
           powerup.dead = true;
-          applyUnlockedPowerup(powerup.type, gunCap);
+          const pickupPoint = {
+            x: powerup._bounds.x + powerup._bounds.w * 0.5,
+            y: powerup._bounds.y + powerup._bounds.h * 0.5
+          };
+          applyUnlockedPowerup(powerup.type, gunCap, pickupPoint);
         }
         break;
       }
@@ -693,7 +741,9 @@ import { createDifficultySystem } from './core/difficulty.js';
     level = 1;
     levelSpawned = 0;
     levelMultiShotUpgrades = 0;
-    empTimer = 0;
+    slowFieldTimer = 0;
+    fieldProjectorCharge = 0;
+    fieldChargeTransfers = [];
     const openingDifficulty = getDifficultyForLevel(level);
     wallMax = openingDifficulty.wallMaxHealth;
     wallHealth = wallMax;
@@ -735,14 +785,14 @@ import { createDifficultySystem } from './core/difficulty.js';
         }
       }
     }
-    // Left lane events: gun crates plus EMP crates.
+    // Left lane events: gun crates plus slowing-field activator crates.
     powerupTimer -= dt;
     if(powerupTimer<=0){
       powerupTimer = difficulty.powerupIntervalMin + Math.random()*(difficulty.powerupIntervalMax - difficulty.powerupIntervalMin);
       const t = Math.random();
       const y = g.topY + 8;
       const gunChance = getLeftLaneGunChance(level);
-      const type = Math.random() < gunChance ? 'gun' : 'emp';
+      const type = Math.random() < gunChance ? 'gun' : 'field';
       const baseShots = difficulty.lockBase + Math.floor(Math.random()*(difficulty.lockRange + 1));
       const shots = type==='gun' ? baseShots : Math.max(2, baseShots - 1);
       powerups.push(new PowerUp(t, y, type, shots));
@@ -753,10 +803,8 @@ import { createDifficultySystem } from './core/difficulty.js';
     accum += dt;
     tickTransientEffects(dt);
 
-    if(empTimer > 0){
-      const prevEmp = empTimer;
-      empTimer = Math.max(0, empTimer - dt);
-      if(prevEmp > 0 && empTimer === 0) updateUI();
+    if(slowFieldTimer > 0){
+      slowFieldTimer = Math.max(0, slowFieldTimer - dt);
     }
 
     if(levelTransitionTimer > 0){
@@ -765,6 +813,7 @@ import { createDifficultySystem } from './core/difficulty.js';
         levelTransitionTimer = 0;
         levelTransitionLabel = '';
       }
+      updateUI();
       return;
     }
 
@@ -781,6 +830,7 @@ import { createDifficultySystem } from './core/difficulty.js';
     syncLevel();
 
     if(levelTransitionTimer <= 0) spawnWave(dt);
+    updateUI();
   }
 
   function draw(){
@@ -1043,12 +1093,17 @@ import { createDifficultySystem } from './core/difficulty.js';
     ctx.fillStyle = '#2e3d4f';
     ctx.fill();
 
+    const laneTopLeft = { x: roadCenterX + wallWidthTop/2, y: roadTopY };
+    const laneTopRight = { x: roadCenterX + roadWidthTop/2, y: roadTopY };
+    const laneBottomLeft = { x: roadCenterX + wallWidthBottom/2, y: roadBottomY };
+    const laneBottomRight = { x: roadCenterX + roadWidthBottom/2, y: roadBottomY };
+
     // Right lane
     ctx.beginPath();
-    ctx.moveTo(roadCenterX + wallWidthTop/2, roadTopY);
-    ctx.lineTo(roadCenterX + roadWidthTop/2, roadTopY);
-    ctx.lineTo(roadCenterX + roadWidthBottom/2, roadBottomY);
-    ctx.lineTo(roadCenterX + wallWidthBottom/2, roadBottomY);
+    ctx.moveTo(laneTopLeft.x, laneTopLeft.y);
+    ctx.lineTo(laneTopRight.x, laneTopRight.y);
+    ctx.lineTo(laneBottomRight.x, laneBottomRight.y);
+    ctx.lineTo(laneBottomLeft.x, laneBottomLeft.y);
     ctx.closePath();
     ctx.fillStyle = '#2e3d4f';
     ctx.fill();
@@ -1143,6 +1198,126 @@ import { createDifficultySystem } from './core/difficulty.js';
     ctx.lineTo(roadCenterX + 5, roadBottomY - 26);
     ctx.stroke();
     ctx.setLineDash([]);
+
+    const projector = getFieldProjectorAnchor();
+
+    if(fieldChargeTransfers.length > 0){
+      ctx.save();
+      for(let i=0;i<fieldChargeTransfers.length;i++){
+        const transfer = fieldChargeTransfers[i];
+        const t = clamp(transfer.age / Math.max(0.001, transfer.duration), 0, 1);
+        const hx = lerp(transfer.sx, transfer.tx, t);
+        const hy = lerp(transfer.sy, transfer.ty, t);
+        const arcLift = 22 + 10 * Math.sin((accum * 9.2) + transfer.wobble);
+        const cx = (transfer.sx + transfer.tx) * 0.5 + Math.sin((accum * 7.1) + transfer.wobble) * 14;
+        const cy = Math.min(transfer.sy, transfer.ty) - arcLift;
+
+        ctx.strokeStyle = 'rgba(136, 255, 243, 0.66)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(transfer.sx, transfer.sy);
+        ctx.quadraticCurveTo(cx, cy, hx, hy);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(210, 255, 248, 0.92)';
+        ctx.beginPath();
+        ctx.arc(hx, hy, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    const projectorPulse = 0.5 + 0.5 * Math.sin(accum * 8.4);
+    const projectorEnergy = clamp(fieldProjectorCharge + (slowFieldTimer > 0 ? 0.45 : 0), 0, 1);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(projector.x, projector.y + 14, 16, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#6e7a86';
+    ctx.fillRect(projector.x - 10, projector.y + 2, 20, 9);
+    ctx.fillStyle = '#8e9aa6';
+    ctx.fillRect(projector.x - 8, projector.y - 7, 16, 12);
+    ctx.strokeStyle = 'rgba(31, 37, 43, 0.65)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(projector.x - 8, projector.y - 7, 16, 12);
+
+    if(projectorEnergy > 0.01){
+      const glow = ctx.createRadialGradient(projector.x, projector.y - 1, 1, projector.x, projector.y - 1, 20 + projectorEnergy * 8);
+      glow.addColorStop(0, `rgba(185, 255, 246, ${0.42 + projectorEnergy * 0.28})`);
+      glow.addColorStop(1, 'rgba(86, 220, 205, 0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(projector.x, projector.y - 1, 20 + projectorEnergy * 8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = `rgba(202, 255, 249, ${0.45 + projectorEnergy * 0.48 + projectorPulse * 0.06})`;
+    ctx.beginPath();
+    ctx.arc(projector.x, projector.y - 1, 4.4 + projectorEnergy * 1.9, 0, Math.PI * 2);
+    ctx.fill();
+
+    if(slowFieldTimer > 0){
+      const activeRatio = clamp(slowFieldTimer / Math.max(0.001, GAME_TUNING.leftLane.fieldDuration), 0, 1);
+      const pulse = 0.5 + 0.5 * Math.sin(accum * 10.5);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(laneTopLeft.x, laneTopLeft.y);
+      ctx.lineTo(laneTopRight.x, laneTopRight.y);
+      ctx.lineTo(laneBottomRight.x, laneBottomRight.y);
+      ctx.lineTo(laneBottomLeft.x, laneBottomLeft.y);
+      ctx.closePath();
+      ctx.clip();
+
+      const laneGlow = ctx.createLinearGradient(laneTopLeft.x, roadTopY, laneBottomRight.x, roadBottomY);
+      laneGlow.addColorStop(0, `rgba(66, 236, 215, ${0.26 + activeRatio * 0.20})`);
+      laneGlow.addColorStop(1, `rgba(40, 112, 142, ${0.16 + activeRatio * 0.10})`);
+      ctx.fillStyle = laneGlow;
+      ctx.fillRect(laneTopLeft.x - 12, roadTopY, laneBottomRight.x - laneTopLeft.x + 24, roadBottomY - roadTopY);
+
+      ctx.globalAlpha = Math.min(0.85, 0.26 + activeRatio * 0.38 + pulse * 0.15);
+      ctx.strokeStyle = '#97fff4';
+      ctx.lineWidth = 1.5;
+      for(let i=0;i<11;i++){
+        const scanT = 1 - ((accum * 0.9 + i / 11) % 1);
+        const y = lerp(roadTopY, roadBottomY, scanT);
+        const leftX = lerp(laneTopLeft.x, laneBottomLeft.x, scanT);
+        const rightX = lerp(laneTopRight.x, laneBottomRight.x, scanT);
+        const skew = -Math.sin((accum * 7.8) + i * 0.7) * 4;
+        ctx.beginPath();
+        ctx.moveTo(leftX + 2 + skew, y);
+        ctx.lineTo(rightX - 2 + skew, y);
+        ctx.stroke();
+      }
+
+      ctx.globalAlpha = Math.min(0.92, 0.56 + pulse * 0.24);
+      ctx.strokeStyle = 'rgba(163, 255, 246, 0.94)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(laneTopLeft.x, laneTopLeft.y);
+      ctx.lineTo(laneBottomLeft.x, laneBottomLeft.y);
+      ctx.moveTo(laneTopRight.x, laneTopRight.y);
+      ctx.lineTo(laneBottomRight.x, laneBottomRight.y);
+      ctx.stroke();
+
+      // Emission rays from projector into the slowed lane.
+      ctx.globalAlpha = Math.min(0.78, 0.36 + pulse * 0.22);
+      ctx.strokeStyle = 'rgba(134, 255, 244, 0.90)';
+      ctx.lineWidth = 1.4;
+      for(let i=0;i<4;i++){
+        const t = 0.16 + i * 0.21;
+        const tx = lerp(laneTopLeft.x, laneBottomRight.x, t);
+        const ty = lerp(roadTopY, roadBottomY, t);
+        ctx.beginPath();
+        ctx.moveTo(projector.x, projector.y - 1);
+        ctx.quadraticCurveTo(projector.x + 16 + i * 5, projector.y - 36 - i * 4, tx, ty);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     ctx.restore();
 
     // Draw enemies back-to-front so closer ones naturally occlude farther ones.
@@ -1317,9 +1492,15 @@ import { createDifficultySystem } from './core/difficulty.js';
   function updateUI(){
     const difficulty = getDifficultyForLevel(level);
     const waveRemaining = Math.max(0, (difficulty.enemyQuota - levelSpawned) + enemies.length);
-    const wallText = wallBroken ? 'Broken' : `${wallHealth}/${wallMax}`;
-    const laneText = empTimer > 0 ? ' | Lane: EMP' : '';
-    hudEl.textContent = `Lvl: ${level} | Wave Left: ${waveRemaining} | HP: ${player ? player.lives : GAME_TUNING.player.startingLives}/${GAME_TUNING.player.maxLives} | Wall: ${wallText}${laneText}`;
+
+    if(hudLevelEl && hudWaveEl){
+      hudLevelEl.textContent = `Lvl ${level}`;
+      hudWaveEl.textContent = `Wave ${waveRemaining}`;
+      return;
+    }
+
+    // Fallback string for older markup, still without player/wall HP text.
+    hudEl.textContent = `Lvl: ${level} | Wave Left: ${waveRemaining}`;
   }
 
   // initial
