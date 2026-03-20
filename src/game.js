@@ -1,3 +1,8 @@
+import { VIEWPORT_PADDING, LANDSCAPE_ASPECT, PORTRAIT_ASPECT, GAME_TUNING, LEVEL_DEFS } from './core/config.js';
+import { clamp, lerp, collide, removeDeadInPlace } from './core/math.js';
+import { createGeometrySystem, getPerspectiveSpeedMultiplier } from './core/geometry.js';
+import { createDifficultySystem } from './core/difficulty.js';
+
 (function(){
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -6,11 +11,23 @@
   const statusEl = document.getElementById('status');
   const gameContainer = document.getElementById('game-container');
 
-  const VIEWPORT_PADDING = 10;
-  const LANDSCAPE_ASPECT = 4 / 3;
-  const PORTRAIT_ASPECT = 3 / 4;
-
   let W = 800, H = 600;
+  const geometry = createGeometrySystem(W, H);
+  const {
+    getRoadGeometry,
+    getRoadBounds,
+    getLanePerspectiveRect,
+    getPlayerRoadClamp,
+    getWallRect: getWallRectForPlayer,
+    setSize: setGeometrySize,
+    clearCaches: clearGeometryCaches
+  } = geometry;
+  const { getDifficultyForLevel, clearCaches: clearDifficultyCaches } = createDifficultySystem(LEVEL_DEFS, GAME_TUNING);
+
+  function getWallRect(){
+    return getWallRectForPlayer(player);
+  }
+
   function resize(){
     const viewportW = Math.max(320, window.innerWidth - VIEWPORT_PADDING*2);
     const viewportH = Math.max(360, window.innerHeight - VIEWPORT_PADDING*2);
@@ -25,6 +42,7 @@
 
     W = Math.round(nextW);
     H = Math.round(nextH);
+    setGeometrySize(W, H);
 
     gameContainer.style.width = `${W}px`;
     gameContainer.style.height = `${H}px`;
@@ -38,99 +56,6 @@
   }
   resize();
   window.addEventListener('resize', resize);
-
-  // Central controls. `intensity` is still the single high-level knob.
-  const GAME_TUNING = {
-    intensity: 1.12,
-    player: {
-      startingLives: 3,
-      maxLives: 6
-    },
-    gun: {
-      maxMultiUpgradesPerLevel: 1,
-      multiShotChance: 0.35,
-      shootDelayBoost: 0.025
-    },
-    leftLane: {
-      gunChanceBase: 0.22,
-      gunChancePerLevel: 0.05,
-      gunChanceMax: 0.55,
-      empDuration: 3.2,
-      empSlowMultiplier: 0.60
-    },
-    transition: {
-      duration: 1.25,
-      wallRestoreFraction: 0.25,
-      clearEnemiesOnTransition: false
-    },
-    endless: {
-      spawnDropPerLevel: 0.12,
-      maxActivePerLevel: 1,
-      burstChancePerLevel: 0.03,
-      speedPerLevel: 0.35,
-      healthBonusEveryLevels: 2,
-      eliteChancePerLevel: 0.02,
-      attackDropPerLevel: 0.04,
-      powerupLockPerLevels: 3,
-      powerupIntervalDropPerLevel: 0.04,
-      wallHealthDropPerLevel: 1,
-      gunCapRaiseEveryLevels: 2,
-      gunFloorDropPerLevel: 0.003,
-      gunFloorMin: 0.10
-    }
-  };
-
-  // Explicit level data. Tune these values to craft levels directly.
-  const LEVEL_DEFS = [
-    {
-      level: 1,
-      enemyQuota: 125,
-      enemy: { spawnInterval: 1.15, maxActive: 24, burstChance: 0.75, speedMin: 24.0, speedMax: 32.0, healthBonus: 2, eliteChance: 0.30, attackMin: 1.05, attackMax: 1.55 },
-      powerups: { intervalMin: 4.2, intervalMax: 5.8, lockBase: 4, lockRange: 2 },
-      gun: { maxMultiShot: 3, shootDelayFloor: 0.16 },
-      wall: { maxHealth: 40 }
-    },
-    {
-      level: 2,
-      enemyQuota: 160,
-      enemy: { spawnInterval: 1.0, maxActive: 27, burstChance: 0.82, speedMin: 26.0, speedMax: 35.0, healthBonus: 2, eliteChance: 0.36, attackMin: 0.92, attackMax: 1.42 },
-      powerups: { intervalMin: 3.9, intervalMax: 5.4, lockBase: 4, lockRange: 3 },
-      gun: { maxMultiShot: 3, shootDelayFloor: 0.15 },
-      wall: { maxHealth: 38 }
-    },
-    {
-      level: 3,
-      enemyQuota: 200,
-      enemy: { spawnInterval: 0.9, maxActive: 30, burstChance: 0.88, speedMin: 28.0, speedMax: 38.0, healthBonus: 3, eliteChance: 0.42, attackMin: 0.82, attackMax: 1.30 },
-      powerups: { intervalMin: 3.5, intervalMax: 5.0, lockBase: 5, lockRange: 3 },
-      gun: { maxMultiShot: 4, shootDelayFloor: 0.14 },
-      wall: { maxHealth: 36 }
-    },
-    {
-      level: 4,
-      enemyQuota: 245,
-      enemy: { spawnInterval: 0.8, maxActive: 34, burstChance: 0.94, speedMin: 30.0, speedMax: 41.0, healthBonus: 3, eliteChance: 0.48, attackMin: 0.74, attackMax: 1.18 },
-      powerups: { intervalMin: 3.2, intervalMax: 4.6, lockBase: 5, lockRange: 4 },
-      gun: { maxMultiShot: 4, shootDelayFloor: 0.13 },
-      wall: { maxHealth: 34 }
-    },
-    {
-      level: 5,
-      enemyQuota: 300,
-      enemy: { spawnInterval: 0.74, maxActive: 38, burstChance: 0.96, speedMin: 32.0, speedMax: 44.0, healthBonus: 4, eliteChance: 0.54, attackMin: 0.68, attackMax: 1.08 },
-      powerups: { intervalMin: 3.0, intervalMax: 4.3, lockBase: 6, lockRange: 4 },
-      gun: { maxMultiShot: 5, shootDelayFloor: 0.12 },
-      wall: { maxHealth: 32 }
-    },
-    {
-      level: 6,
-      enemyQuota: 360,
-      enemy: { spawnInterval: 0.68, maxActive: 42, burstChance: 0.97, speedMin: 34.0, speedMax: 47.0, healthBonus: 4, eliteChance: 0.60, attackMin: 0.62, attackMax: 1.00 },
-      powerups: { intervalMin: 2.8, intervalMax: 4.0, lockBase: 6, lockRange: 5 },
-      gun: { maxMultiShot: 5, shootDelayFloor: 0.11 },
-      wall: { maxHealth: 30 }
-    }
-  ];
 
   // Input
   const keys = {};
@@ -292,16 +217,16 @@
       ctx.restore();
 
       // Draw health/lives indicator above player
+      ctx.save();
+      ctx.font='20px Arial';
+      ctx.textAlign='center';
+      ctx.textBaseline='middle';
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = '#f44';
       for(let i=0;i<this.lives;i++){
-        ctx.save();
-        ctx.font='20px Arial';
-        ctx.textAlign='center';
-        ctx.textBaseline='middle';
-        ctx.globalAlpha = 0.85;
-        ctx.fillStyle = '#f44';
         ctx.fillText('❤', this.x+this.w/2 + (i-((this.lives-1)/2))*22, this.y-18);
-        ctx.restore();
       }
+      ctx.restore();
     }
     bounds(){ return {x:this.x,y:this.y,w:this.w,h:this.h} }
   }
@@ -357,22 +282,8 @@
     }
     resetAttackTimer(){ this.attackTimer = this.attackMin + Math.random()*(this.attackMax-this.attackMin); }
     getPerspective(){
-      // Right lane perspective
-      const g = getRoadGeometry();
-      // Interpolate lane edge
-      const frac = clamp((this.y-g.topY)/(g.bottomY-g.topY), 0, 1);
-      const laneLeft = g.centerX + g.wallWidthTop/2 + frac*(g.centerX + g.wallWidthBottom/2 - (g.centerX + g.wallWidthTop/2));
-      const laneRight = g.centerX + g.roadWidthTop/2 + frac*(g.centerX + g.roadWidthBottom/2 - (g.centerX + g.roadWidthTop/2));
-      // Scale for perspective
-      const perspectiveScale = 0.5 + 0.7*frac;
       const healthScale = clamp(1 + (this.maxHealth() - 1) * 0.22, 1, 1.8);
-      const scale = perspectiveScale * healthScale;
-      const w = this.baseW*scale;
-      const h = this.baseH*scale;
-      const laneWidth = Math.max(1, laneRight - laneLeft);
-      const usableLane = Math.max(0, laneWidth - w);
-      const x = laneLeft + clamp(this.laneT, 0, 1)*usableLane;
-      return {x, y: this.y, w, h, scale};
+      return getLanePerspectiveRect(this.y, 'right', this.laneT, this.baseW, this.baseH, healthScale);
     }
     update(dt){
       // Move with perspective-aware speed: slower at distance, faster up close.
@@ -491,18 +402,7 @@
       this.baseW = 32; this.baseH = 32;
     }
     getPerspective(){
-      // Left lane perspective
-      const g = getRoadGeometry();
-      const frac = clamp((this.y-g.topY)/(g.bottomY-g.topY), 0, 1);
-      const laneLeft = g.centerX - g.roadWidthTop/2 + frac*(g.centerX - g.roadWidthBottom/2 - (g.centerX - g.roadWidthTop/2));
-      const laneRight = g.centerX - g.wallWidthTop/2 + frac*(g.centerX - g.wallWidthBottom/2 - (g.centerX - g.wallWidthTop/2));
-      const scale = 0.5 + 0.7*frac;
-      const w = this.baseW*scale;
-      const h = this.baseH*scale;
-      const laneWidth = Math.max(1, laneRight - laneLeft);
-      const usableLane = Math.max(0, laneWidth - w);
-      const x = laneLeft + clamp(this.laneT, 0, 1)*usableLane;
-      return {x, y: this.y, w, h, scale};
+      return getLanePerspectiveRect(this.y, 'left', this.laneT, this.baseW, this.baseH, 1);
     }
     update(dt){
       const depth = getRoadBounds(this.y).depthT;
@@ -537,51 +437,6 @@
   }
 
   // Helpers
-  function collide(a,b){ return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y }
-
-  function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
-  function lerp(a, b, t){ return a + (b-a)*t; }
-
-  function getRoadGeometry(){
-    const roadWidthTop = clamp(W * 0.23, 150, 240);
-    const roadWidthBottom = clamp(W * 0.68, 300, 700);
-    const wallWidthTop = clamp(W * 0.015, 8, 16);
-    const wallWidthBottom = clamp(W * 0.04, 18, 36);
-
-    return {
-      // Extend beyond viewport so the road has no visible hard start/stop.
-      topY: -Math.round(H * 0.12),
-      bottomY: H + Math.round(H * 0.15),
-      roadWidthTop,
-      roadWidthBottom,
-      wallWidthTop,
-      wallWidthBottom,
-      centerX: W/2
-    };
-  }
-
-  function getRoadBounds(y, extrapolate){
-    const g = getRoadGeometry();
-    const rawDepth = (y - g.topY) / (g.bottomY - g.topY);
-    const depthT = extrapolate ? clamp(rawDepth, -0.35, 1.1) : clamp(rawDepth, 0, 1);
-    const left = lerp(g.centerX - g.roadWidthTop/2, g.centerX - g.roadWidthBottom/2, depthT);
-    const right = lerp(g.centerX + g.roadWidthTop/2, g.centerX + g.roadWidthBottom/2, depthT);
-    return { left, right, depthT };
-  }
-
-  function getPlayerRoadClamp(y, playerW){
-    const road = getRoadBounds(y);
-    const sideInset = 16;
-    const minX = road.left + sideInset;
-    const maxX = road.right - sideInset - playerW;
-    return { minX, maxX: Math.max(minX, maxX) };
-  }
-
-  function getPerspectiveSpeedMultiplier(depthT){
-    // Average around 1.0x across depth while still selling perspective.
-    return 0.4 + 1.2*clamp(depthT, 0, 1);
-  }
-
   function getLeftLaneGunChance(currentLevel){
     const lane = GAME_TUNING.leftLane;
     return clamp(lane.gunChanceBase + (Math.max(1, currentLevel) - 1) * lane.gunChancePerLevel, lane.gunChanceBase, lane.gunChanceMax);
@@ -591,101 +446,9 @@
     return empTimer > 0 ? GAME_TUNING.leftLane.empSlowMultiplier : 1;
   }
 
-  function getEnemyLaneBounds(y){
-    const g = getRoadGeometry();
-    const t = clamp((y - g.topY) / (g.bottomY - g.topY), 0, 1);
-    const left = lerp(g.centerX + g.wallWidthTop/2, g.centerX + g.wallWidthBottom/2, t);
-    const right = lerp(g.centerX + g.roadWidthTop/2, g.centerX + g.roadWidthBottom/2, t);
-    return { left, right };
-  }
-
-  function getWallRect(){
-    // Wall sits slightly up-road from the player and spans the full enemy lane.
-    const y = player ? player.y - 14 : H - 94;
-    const lane = getEnemyLaneBounds(y + 8);
-    const pad = 2;
-    return { x: lane.left + pad, y, w: Math.max(24, lane.right - lane.left - pad*2), h: 16 };
-  }
-
-  function getLevelDef(currentLevel){
-    const lvl = Math.max(1, currentLevel);
-    const direct = LEVEL_DEFS.find(def => def.level === lvl);
-    if(direct) return direct;
-
-    // Endless fallback after authored levels.
-    const last = LEVEL_DEFS[LEVEL_DEFS.length - 1];
-    const overflow = lvl - last.level;
-    const e = GAME_TUNING.endless;
-
-    return {
-      level: lvl,
-      enemyQuota: last.enemyQuota + overflow * 55,
-      enemy: {
-        spawnInterval: Math.max(0.65, last.enemy.spawnInterval - overflow * e.spawnDropPerLevel),
-        maxActive: Math.min(48, last.enemy.maxActive + overflow * e.maxActivePerLevel),
-        burstChance: clamp(last.enemy.burstChance + overflow * e.burstChancePerLevel, 0.10, 0.97),
-        speedMin: last.enemy.speedMin + overflow * e.speedPerLevel,
-        speedMax: last.enemy.speedMax + overflow * e.speedPerLevel,
-        healthBonus: last.enemy.healthBonus + Math.floor(overflow / e.healthBonusEveryLevels),
-        eliteChance: clamp(last.enemy.eliteChance + overflow * e.eliteChancePerLevel, 0.10, 0.85),
-        attackMin: Math.max(0.60, last.enemy.attackMin - overflow * e.attackDropPerLevel),
-        attackMax: Math.max(0.90, last.enemy.attackMax - overflow * e.attackDropPerLevel)
-      },
-      powerups: {
-        intervalMin: Math.max(1.8, last.powerups.intervalMin - overflow * e.powerupIntervalDropPerLevel),
-        intervalMax: Math.max(2.4, last.powerups.intervalMax - overflow * e.powerupIntervalDropPerLevel),
-        lockBase: last.powerups.lockBase + Math.floor(overflow / e.powerupLockPerLevels),
-        lockRange: last.powerups.lockRange + Math.floor(overflow / (e.powerupLockPerLevels + 1))
-      },
-      gun: {
-        maxMultiShot: Math.min(6, last.gun.maxMultiShot + Math.floor(overflow / e.gunCapRaiseEveryLevels)),
-        shootDelayFloor: Math.max(e.gunFloorMin, last.gun.shootDelayFloor - overflow * e.gunFloorDropPerLevel)
-      },
-      wall: {
-        maxHealth: Math.max(24, last.wall.maxHealth - overflow * e.wallHealthDropPerLevel)
-      }
-    };
-  }
-
-  function getDifficultyForLevel(currentLevel){
-    const def = getLevelDef(currentLevel);
-    const intensity = GAME_TUNING.intensity;
-    const enemy = def.enemy;
-    const powerups = def.powerups;
-    const gun = def.gun;
-
-    const spawnInterval = Math.max(0.55, enemy.spawnInterval / intensity);
-    const maxActive = Math.max(1, Math.round(enemy.maxActive * (0.88 + 0.20 * intensity)));
-    const burstChance = clamp(enemy.burstChance * (0.90 + 0.20 * intensity), 0.05, 0.97);
-    const speedMin = enemy.speedMin * intensity;
-    const speedMax = enemy.speedMax * intensity;
-    const healthBonus = enemy.healthBonus + (intensity >= 1.35 ? 1 : 0);
-    const eliteChance = clamp(enemy.eliteChance * (0.90 + 0.20 * intensity), 0.05, 0.95);
-    const attackMin = Math.max(0.45, enemy.attackMin / intensity);
-    const attackMax = Math.max(0.75, enemy.attackMax / intensity);
-
-    return {
-      spawnInterval,
-      maxActive,
-      burstChance,
-      speedMin,
-      speedMax,
-      healthBonus,
-      eliteChance,
-      attackMin,
-      attackMax,
-      powerupIntervalMin: powerups.intervalMin,
-      powerupIntervalMax: powerups.intervalMax,
-      lockBase: powerups.lockBase,
-      lockRange: powerups.lockRange,
-      enemyQuota: Math.max(10, Math.round(def.enemyQuota)),
-      gunMaxMultiShot: Math.max(1, Math.round(gun.maxMultiShot)),
-      gunMaxMultiUpgradesPerLevel: Math.max(0, Math.round(GAME_TUNING.gun.maxMultiUpgradesPerLevel)),
-      gunShootDelayFloor: Math.max(0.08, gun.shootDelayFloor),
-      gunMultiShotChance: GAME_TUNING.gun.multiShotChance,
-      gunShootDelayBoost: GAME_TUNING.gun.shootDelayBoost,
-      wallMaxHealth: Math.max(10, Math.round(def.wall.maxHealth))
-    };
+  function clearRuntimeCaches(){
+    clearDifficultyCaches();
+    clearGeometryCaches();
   }
 
   function startLevelTransition(newLevel){
@@ -728,8 +491,201 @@
   let levelMultiShotUpgrades = 0;
   let empTimer = 0;
   let notifPopup = null, notifPopupTimer = 0;
+  let transientStatusTimer = 0;
+  let pickupFlashTimer = 0;
   let levelTransitionTimer = 0, levelTransitionLabel = '';
   let wallHealth = LEVEL_DEFS[0].wall.maxHealth, wallMax = LEVEL_DEFS[0].wall.maxHealth, wallBroken = false;
+
+  function showTransientStatus(text, duration){
+    statusEl.textContent = text;
+    transientStatusTimer = Math.max(transientStatusTimer, duration || 1.2);
+  }
+
+  function triggerPickupFlash(duration){
+    pickupFlashTimer = Math.max(pickupFlashTimer, duration || 0.3);
+    canvas.style.boxShadow = '0 0 32px 8px #0ff';
+  }
+
+  function tickTransientEffects(dt){
+    if(pickupFlashTimer > 0){
+      pickupFlashTimer = Math.max(0, pickupFlashTimer - dt);
+      if(pickupFlashTimer === 0) canvas.style.boxShadow = '';
+    }
+
+    if(transientStatusTimer > 0){
+      transientStatusTimer = Math.max(0, transientStatusTimer - dt);
+      if(transientStatusTimer === 0 && running && !paused && statusEl.style.display === 'none'){
+        statusEl.textContent = '';
+      }
+    }
+  }
+
+  function applyGunPowerup(gunCap){
+    const canGainMulti = player.multiShot < gunCap.gunMaxMultiShot;
+    const canGainMultiThisLevel = levelMultiShotUpgrades < gunCap.gunMaxMultiUpgradesPerLevel;
+    const canGainRate = player.shootDelay > gunCap.gunShootDelayFloor + 0.001;
+
+    if(canGainMulti && canGainMultiThisLevel){
+      const shouldGainMulti = !canGainRate || Math.random() < gunCap.gunMultiShotChance;
+      if(shouldGainMulti){
+        player.multiShot++;
+        levelMultiShotUpgrades++;
+        showTransientStatus(`Multi-Shot! Now shooting ${player.multiShot}!`, 1.2);
+        notifPopup = 'Multi-Shot';
+        return;
+      }
+    }
+
+    if(canGainRate){
+      player.shootDelay = Math.max(gunCap.gunShootDelayFloor, player.shootDelay - gunCap.gunShootDelayBoost);
+      showTransientStatus('Gun Power-Up! Faster shooting!', 1.2);
+      notifPopup = 'Gun Boost';
+      return;
+    }
+
+    if(canGainMulti && !canGainMultiThisLevel){
+      showTransientStatus('Multi-Shot Upgrade Used This Level', 1.2);
+      notifPopup = 'Level Limit';
+      return;
+    }
+
+    showTransientStatus('Gun Maxed For This Level', 1.2);
+    notifPopup = 'Maxed';
+  }
+
+  function applyUnlockedPowerup(type, gunCap){
+    triggerPickupFlash(0.3);
+    if(type === 'gun'){
+      applyGunPowerup(gunCap);
+    } else {
+      empTimer = Math.max(empTimer, GAME_TUNING.leftLane.empDuration);
+      showTransientStatus('EMP Pulse! Horde Slowed', 1.2);
+      notifPopup = 'EMP';
+    }
+    notifPopupTimer = 1.2;
+    updateUI();
+  }
+
+  function updateEntities(dt){
+    player.update(dt);
+
+    for(let i=0;i<bullets.length;i++) bullets[i].update(dt);
+    for(let i=0;i<enemies.length;i++) enemies[i].update(dt);
+    for(let i=0;i<powerups.length;i++) powerups[i].update(dt);
+
+    removeDeadInPlace(bullets);
+
+    for(let i=0;i<enemies.length;i++) enemies[i]._bounds = enemies[i].bounds();
+    for(let i=0;i<powerups.length;i++) powerups[i]._bounds = powerups[i].bounds();
+  }
+
+  function resolveBulletCollisions(gunCap){
+    let needsUIRefresh = false;
+
+    for(let i=0;i<bullets.length;i++){
+      const bullet = bullets[i];
+      if(bullet.dead) continue;
+
+      const bulletBounds = bullet.bounds();
+
+      for(let j=0;j<enemies.length;j++){
+        const enemy = enemies[j];
+        if(enemy.dead) continue;
+        if(!collide(bulletBounds, enemy._bounds)) continue;
+
+        enemy.hit();
+        bullet.dead = true;
+        if(enemy.dead) needsUIRefresh = true;
+        break;
+      }
+
+      if(bullet.dead) continue;
+
+      for(let j=0;j<powerups.length;j++){
+        const powerup = powerups[j];
+        if(powerup.dead) continue;
+        if(!collide(bulletBounds, powerup._bounds)) continue;
+
+        bullet.dead = true;
+        if(powerup.locked){
+          powerup.hit();
+        } else {
+          powerup.dead = true;
+          applyUnlockedPowerup(powerup.type, gunCap);
+        }
+        break;
+      }
+    }
+
+    if(needsUIRefresh) updateUI();
+  }
+
+  function resolveEnemyContacts(dt){
+    const wallRect = getWallRect();
+    const playerBounds = player.bounds();
+    let needsUIRefresh = false;
+
+    for(let i=0;i<enemies.length;i++){
+      const enemy = enemies[i];
+      if(enemy.dead) continue;
+      const enemyBounds = enemy._bounds;
+
+      if(!wallBroken && collide(enemyBounds, wallRect)){
+        // Keep the enemy pinned to the barrier and let it chip wall HP over time.
+        const overlap = (enemyBounds.y + enemyBounds.h) - wallRect.y;
+        if(overlap > 0){
+          enemy.y -= overlap;
+          enemyBounds.y -= overlap;
+        }
+
+        enemy.attackTimer -= dt;
+        if(enemy.attackTimer <= 0){
+          enemy.resetAttackTimer();
+          wallHealth = Math.max(0, wallHealth - 1);
+          if(wallHealth <= 0){
+            wallBroken = true;
+            showTransientStatus('Wall Broken!', 0.9);
+          }
+          needsUIRefresh = true;
+        }
+        continue;
+      }
+
+      if(collide(enemyBounds, playerBounds)){
+        enemy.dead = true;
+        player.lives--;
+        needsUIRefresh = true;
+        if(player.lives <= 0){
+          endGame();
+          break;
+        }
+      }
+    }
+
+    if(needsUIRefresh) updateUI();
+  }
+
+  function resolvePowerupContacts(){
+    const playerBounds = player.bounds();
+    let needsUIRefresh = false;
+
+    for(let i=0;i<powerups.length;i++){
+      const powerup = powerups[i];
+      if(powerup.dead || !powerup.locked) continue;
+
+      if(collide(powerup._bounds, playerBounds)){
+        powerup.dead = true;
+        player.lives--;
+        needsUIRefresh = true;
+        if(player.lives <= 0){
+          endGame();
+          break;
+        }
+      }
+    }
+
+    if(needsUIRefresh) updateUI();
+  }
 
   function reset(){
     player=new Player(); bullets=[]; enemies=[]; powerups=[];
@@ -743,6 +699,9 @@
     wallHealth = wallMax;
     wallBroken = false;
     notifPopup = null; notifPopupTimer = 0;
+    transientStatusTimer = 0;
+    pickupFlashTimer = 0;
+    canvas.style.boxShadow = '';
     levelTransitionTimer = 0; levelTransitionLabel = '';
     updateUI();
   }
@@ -792,6 +751,7 @@
 
   function update(dt){
     accum += dt;
+    tickTransientEffects(dt);
 
     if(empTimer > 0){
       const prevEmp = empTimer;
@@ -808,110 +768,16 @@
       return;
     }
 
-    player.update(dt);
-    bullets.forEach(b=>b.update(dt)); bullets = bullets.filter(b=>!b.dead);
-    enemies.forEach(e=>e.update(dt));
-    powerups.forEach(p=>p.update(dt));
+    const gunCap = getDifficultyForLevel(level);
+    updateEntities(dt);
+    resolveBulletCollisions(gunCap);
+    resolveEnemyContacts(dt);
+    if(!running) return;
+    resolvePowerupContacts();
 
-    // Bullet collisions: enemies (right lane)
-    bullets.forEach(b=>{
-      enemies.forEach(e=>{
-        if(!e.dead && collide(b.bounds(), e.bounds())){
-          e.hit();
-          b.dead=true;
-          if(e.dead) updateUI();
-        }
-      })
-    });
-    // Bullet collisions: powerups (left lane)
-    bullets.forEach(b=>{
-      powerups.forEach(p=>{
-        if(collide(b.bounds(), p.bounds())){
-          if(p.locked){
-            p.hit(); b.dead=true;
-          } else {
-            // Grant powerup immediately on shot
-            p.dead=true; b.dead=true;
-            // Visual feedback on all unlock pickups
-            canvas.style.boxShadow = '0 0 32px 8px #0ff';
-            setTimeout(()=>{canvas.style.boxShadow='';}, 300);
-            if(p.type==='gun'){
-              const gunCap = getDifficultyForLevel(level);
-              const canGainMulti = player.multiShot < gunCap.gunMaxMultiShot;
-              const canGainMultiThisLevel = levelMultiShotUpgrades < gunCap.gunMaxMultiUpgradesPerLevel;
-              const canGainRate = player.shootDelay > gunCap.gunShootDelayFloor + 0.001;
-              if(canGainMulti && canGainMultiThisLevel && Math.random() < gunCap.gunMultiShotChance){
-                player.multiShot++;
-                levelMultiShotUpgrades++;
-                statusEl.textContent = `Multi-Shot! Now shooting ${player.multiShot}!`;
-                notifPopup = 'Multi-Shot';
-              } else if(canGainRate) {
-                player.shootDelay = Math.max(gunCap.gunShootDelayFloor, player.shootDelay-gunCap.gunShootDelayBoost);
-                statusEl.textContent = 'Gun Power-Up! Faster shooting!';
-                notifPopup = 'Gun Boost';
-              } else if(canGainMulti && canGainMultiThisLevel){
-                player.multiShot++;
-                levelMultiShotUpgrades++;
-                statusEl.textContent = `Multi-Shot! Now shooting ${player.multiShot}!`;
-                notifPopup = 'Multi-Shot';
-              } else if(canGainMulti && !canGainMultiThisLevel){
-                statusEl.textContent = 'Multi-Shot Upgrade Used This Level';
-                notifPopup = 'Level Limit';
-              } else {
-                statusEl.textContent = 'Gun Maxed For This Level';
-                notifPopup = 'Maxed';
-              }
-            } else {
-              empTimer = Math.max(empTimer, GAME_TUNING.leftLane.empDuration);
-              statusEl.textContent = 'EMP Pulse! Horde Slowed';
-              notifPopup = 'EMP';
-            }
-            notifPopupTimer = 1.2;
-            setTimeout(()=>{statusEl.textContent='';}, 1200);
-            updateUI();
-          }
-        }
-      })
-    });
-
-    // Enemies -> wall first, then player if wall is broken
-    const wallRect = getWallRect();
-    for(const e of enemies){
-      if(!wallBroken && collide(e.bounds(), wallRect)){
-        // Keep the enemy pinned to the barrier and let it chip wall HP over time.
-        const b = e.bounds();
-        const overlap = (b.y + b.h) - wallRect.y;
-        if(overlap > 0) e.y -= overlap;
-
-        e.attackTimer -= dt;
-        if(e.attackTimer <= 0){
-          e.resetAttackTimer();
-          wallHealth = Math.max(0, wallHealth - 1);
-          if(wallHealth<=0){
-            wallBroken = true;
-            statusEl.textContent = 'Wall Broken!';
-            setTimeout(()=>{ if(running) statusEl.textContent = ''; }, 900);
-          }
-          updateUI();
-        }
-        continue;
-      }
-      if(collide(e.bounds(), player.bounds())){
-        e.dead=true; player.lives--; updateUI(); if(player.lives<=0) endGame(); break;
-      }
-    }
-    // Powerups -> player (left lane)
-    for(const p of powerups){
-      if(collide(p.bounds(), player.bounds())){
-        if(p.locked){
-          p.dead=true; player.lives--; updateUI(); if(player.lives<=0) endGame();
-        }
-        // If not locked, do nothing (already handled by bullet)
-      }
-    }
-
-    enemies = enemies.filter(e=>!e.dead);
-    powerups = powerups.filter(p=>!p.dead);
+    removeDeadInPlace(bullets);
+    removeDeadInPlace(enemies);
+    removeDeadInPlace(powerups);
     syncLevel();
 
     if(levelTransitionTimer <= 0) spawnWave(dt);
@@ -1280,9 +1146,9 @@
     ctx.restore();
 
     // Draw enemies back-to-front so closer ones naturally occlude farther ones.
-    const enemiesByDepth = [...enemies].sort((a, b) => a.y - b.y);
-    enemiesByDepth.forEach(e=>e.draw());
-    powerups.forEach(p=>p.draw());
+    enemies.sort((a, b) => a.y - b.y);
+    for(let i=0;i<enemies.length;i++) enemies[i].draw();
+    for(let i=0;i<powerups.length;i++) powerups[i].draw();
 
     // Bottom defense wall in front of enemies and behind player
     const wallRect = getWallRect();
@@ -1369,7 +1235,7 @@
 
     // Foreground
     player.draw();
-    bullets.forEach(b=>b.draw());
+    for(let i=0;i<bullets.length;i++) bullets[i].draw();
     // Draw a compact event popup for power-up feedback.
     if(notifPopup && notifPopupTimer>0){
       ctx.save();
@@ -1425,8 +1291,28 @@
     }
   }
 
-  function startGame(){ if(running) return; running=true; paused=false; statusEl.style.display='none'; reset(); updatePauseButton(); lastTime=performance.now(); requestAnimationFrame(loop); }
-  function endGame(){ running=false; paused=false; releasePointer(); updatePauseButton(); statusEl.style.display='block'; statusEl.textContent = 'Game Over — Press any key or tap to Restart'; }
+  function startGame(){
+    if(running) return;
+    running = true;
+    paused = false;
+    statusEl.style.display = 'none';
+    reset();
+    updatePauseButton();
+    lastTime = performance.now();
+    requestAnimationFrame(loop);
+  }
+
+  function endGame(){
+    running = false;
+    paused = false;
+    transientStatusTimer = 0;
+    pickupFlashTimer = 0;
+    canvas.style.boxShadow = '';
+    releasePointer();
+    updatePauseButton();
+    statusEl.style.display = 'block';
+    statusEl.textContent = 'Game Over — Press any key or tap to Restart';
+  }
 
   function updateUI(){
     const difficulty = getDifficultyForLevel(level);
@@ -1439,5 +1325,12 @@
   // initial
   reset(); updatePauseButton(); statusEl.style.display='block'; statusEl.textContent='Press any key or tap to start';
   // expose quick debug on window
-  window._game = { start: startGame, stop: endGame, pause: togglePause, tuning: GAME_TUNING, levels: LEVEL_DEFS };
+  window._game = {
+    start: startGame,
+    stop: endGame,
+    pause: togglePause,
+    clearCaches: clearRuntimeCaches,
+    tuning: GAME_TUNING,
+    levels: LEVEL_DEFS
+  };
 })();
