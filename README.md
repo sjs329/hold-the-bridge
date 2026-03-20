@@ -2,6 +2,9 @@ Canvas Shooter
 
 A minimal HTML5 canvas shooter. Open `index.html` in your browser to play.
 
+Play Online:
+https://sjs329.github.io/hold-the-bridge/
+
 Controls:
 - Move: Arrow keys or A/D
 - Move (mobile): Drag/hold on the game area
