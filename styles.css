@@ -5,10 +5,18 @@ body{display:flex;align-items:center;justify-content:center;padding:10px;overflo
 canvas{display:block;width:100%;height:100%;touch-action:none}
 #ui{position:absolute;inset:0;pointer-events:none}
 #hud{position:absolute;left:10px;top:10px;font-weight:bold;text-shadow:0 1px 2px #000c}
+#pause-button{display:none;position:absolute;right:10px;top:10px;width:38px;height:38px;border:1px solid rgba(255,255,255,0.22);border-radius:999px;background:rgba(10,18,28,0.28);color:#eef5ff;font:600 13px/1 Arial,Helvetica,sans-serif;pointer-events:auto;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:0 4px 14px rgba(0,0,0,0.24);opacity:0.78}
+#pause-button:active{transform:scale(0.96);opacity:1}
+#pause-button:disabled{opacity:0.35}
 #status{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.7);padding:18px 32px;border-radius:12px;font-size:1.3em;text-align:center;z-index:10;min-width:220px;box-shadow:0 4px 32px #000a}
 
 @media (max-width: 760px){
 	body{padding:6px}
 	#hud{left:8px;top:8px;font-size:12px}
+	#pause-button{display:block;right:8px;top:8px;width:34px;height:34px;font-size:12px}
 	#status{padding:14px 18px;font-size:1rem;min-width:170px;max-width:88%}
+}
+
+@media (hover: none), (pointer: coarse){
+	#pause-button{display:block}
 }

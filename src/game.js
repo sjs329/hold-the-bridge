@@ -2,6 +2,7 @@
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const hudEl = document.getElementById('hud');
+  const pauseButton = document.getElementById('pause-button');
   const statusEl = document.getElementById('status');
   const gameContainer = document.getElementById('game-container');
 
@@ -142,6 +143,12 @@
     return clamp(x, 0, W);
   }
 
+  function updatePauseButton(){
+    pauseButton.disabled = !running;
+    pauseButton.textContent = paused ? '>' : 'II';
+    pauseButton.setAttribute('aria-label', paused ? 'Resume game' : 'Pause game');
+  }
+
   // Start game on any key; Space toggles pause while running.
   window.addEventListener('keydown', e=>{
     if(e.code==='Space' && running){
@@ -176,6 +183,13 @@
   canvas.addEventListener('pointercancel', releasePointer);
   canvas.addEventListener('pointerleave', releasePointer);
 
+  pauseButton.addEventListener('click', e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    if(!running) return;
+    togglePause();
+  });
+
   // Entities
   class Player{
     constructor(){
@@ -198,9 +212,8 @@
       } else if(pointerActive){
         const targetLeft = pointerX - this.w/2;
         const delta = targetLeft - this.x;
-        const step = clamp(delta, -this.speed*dt, this.speed*dt);
-        this.x += step;
-        if(Math.abs(step) > 0.01) moveX = step > 0 ? 1 : -1;
+        this.x = targetLeft;
+        if(Math.abs(delta) > 0.01) moveX = delta > 0 ? 1 : -1;
       }
 
       // Keep the player on the bridge deck (inside side walls).
@@ -1053,50 +1066,51 @@
     const sideAtTop = lerp(sideTop, sideBottom, tTop);
     const sideAtBot = lerp(sideTop, sideBottom, tBot);
     const lerpPoint = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) });
+    const fillQuad = (a, b, c, d, color) => {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.lineTo(d.x, d.y);
+      ctx.closePath();
+      ctx.fill();
+    };
 
-    const leftWallOuterTop = { x: topRoad.left - sideAtTop, y: riverTop - 2 };
+    const leftWallOuterTop = { x: topRoad.left - sideAtTop, y: riverTop };
     const leftWallInnerTop = { x: topRoad.left, y: riverTop };
-    const leftWallOuterBottom = { x: botRoad.left - sideAtBot, y: riverBottom + 2 };
+    const leftWallOuterBottom = { x: botRoad.left - sideAtBot, y: riverBottom };
     const leftWallInnerBottom = { x: botRoad.left, y: riverBottom };
     const rightWallInnerTop = { x: topRoad.right, y: riverTop };
-    const rightWallOuterTop = { x: topRoad.right + sideAtTop, y: riverTop - 2 };
+    const rightWallOuterTop = { x: topRoad.right + sideAtTop, y: riverTop };
     const rightWallInnerBottom = { x: botRoad.right, y: riverBottom };
-    const rightWallOuterBottom = { x: botRoad.right + sideAtBot, y: riverBottom + 2 };
+    const rightWallOuterBottom = { x: botRoad.right + sideAtBot, y: riverBottom };
+    const wallLiftTop = Math.max(2.5, sideAtTop * 0.22);
+    const wallLiftBot = Math.max(6.2, sideAtBot * 0.28);
+    // Inset cap points stay inside the wall footprint to avoid open-looking seams.
+    const leftCapOuterTop = { x: leftWallOuterTop.x + sideAtTop * 0.12, y: leftWallOuterTop.y - wallLiftTop };
+    const leftCapInnerTop = { x: leftWallInnerTop.x - sideAtTop * 0.10, y: leftWallInnerTop.y - wallLiftTop * 0.9 };
+    const leftCapOuterBottom = { x: leftWallOuterBottom.x + sideAtBot * 0.12, y: leftWallOuterBottom.y - wallLiftBot };
+    const leftCapInnerBottom = { x: leftWallInnerBottom.x - sideAtBot * 0.10, y: leftWallInnerBottom.y - wallLiftBot * 0.9 };
+    const rightCapOuterTop = { x: rightWallOuterTop.x - sideAtTop * 0.12, y: rightWallOuterTop.y - wallLiftTop };
+    const rightCapInnerTop = { x: rightWallInnerTop.x + sideAtTop * 0.10, y: rightWallInnerTop.y - wallLiftTop * 0.9 };
+    const rightCapOuterBottom = { x: rightWallOuterBottom.x - sideAtBot * 0.12, y: rightWallOuterBottom.y - wallLiftBot };
+    const rightCapInnerBottom = { x: rightWallInnerBottom.x + sideAtBot * 0.10, y: rightWallInnerBottom.y - wallLiftBot * 0.9 };
 
-    ctx.fillStyle = 'rgba(0,0,0,0.15)';
-    ctx.beginPath();
-    ctx.moveTo(leftWallInnerTop.x, leftWallInnerTop.y);
-    ctx.lineTo(leftWallInnerTop.x + 12, leftWallInnerTop.y + 1);
-    ctx.lineTo(leftWallInnerBottom.x + 18, leftWallInnerBottom.y + 2);
-    ctx.lineTo(leftWallInnerBottom.x, leftWallInnerBottom.y);
-    ctx.closePath();
-    ctx.fill();
+    // Side parapets are extruded into top caps plus vertical faces for a stronger 3D read.
+    fillQuad(leftWallOuterTop, leftCapOuterTop, leftCapOuterBottom, leftWallOuterBottom, 'rgba(84, 91, 100, 0.95)');
+    fillQuad(leftCapOuterTop, leftCapInnerTop, leftCapInnerBottom, leftCapOuterBottom, '#a6adb6');
+    fillQuad(leftCapInnerTop, leftWallInnerTop, leftWallInnerBottom, leftCapInnerBottom, 'rgba(136, 145, 155, 0.90)');
 
-    ctx.beginPath();
-    ctx.moveTo(rightWallInnerTop.x, rightWallInnerTop.y);
-    ctx.lineTo(rightWallInnerTop.x - 12, rightWallInnerTop.y + 1);
-    ctx.lineTo(rightWallInnerBottom.x - 18, rightWallInnerBottom.y + 2);
-    ctx.lineTo(rightWallInnerBottom.x, rightWallInnerBottom.y);
-    ctx.closePath();
-    ctx.fill();
+    fillQuad(rightWallInnerTop, rightCapInnerTop, rightCapInnerBottom, rightWallInnerBottom, 'rgba(112, 121, 130, 0.90)');
+    fillQuad(rightCapInnerTop, rightCapOuterTop, rightCapOuterBottom, rightCapInnerBottom, '#aeb5be');
+    fillQuad(rightCapOuterTop, rightWallOuterTop, rightWallOuterBottom, rightCapOuterBottom, 'rgba(195, 202, 211, 0.88)');
 
-    ctx.fillStyle = '#8f959c';
-    ctx.beginPath();
-    ctx.moveTo(leftWallOuterTop.x, leftWallOuterTop.y);
-    ctx.lineTo(leftWallInnerTop.x, leftWallInnerTop.y);
-    ctx.lineTo(leftWallInnerBottom.x, leftWallInnerBottom.y);
-    ctx.lineTo(leftWallOuterBottom.x, leftWallOuterBottom.y);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = '#959ba2';
-    ctx.beginPath();
-    ctx.moveTo(rightWallInnerTop.x, rightWallInnerTop.y);
-    ctx.lineTo(rightWallOuterTop.x, rightWallOuterTop.y);
-    ctx.lineTo(rightWallOuterBottom.x, rightWallOuterBottom.y);
-    ctx.lineTo(rightWallInnerBottom.x, rightWallInnerBottom.y);
-    ctx.closePath();
-    ctx.fill();
+    // Explicit closure faces avoid hollow-looking ends at the near/far shoreline joins.
+    fillQuad(leftWallOuterTop, leftWallInnerTop, leftCapInnerTop, leftCapOuterTop, 'rgba(112, 121, 131, 0.72)');
+    fillQuad(leftWallOuterBottom, leftCapOuterBottom, leftCapInnerBottom, leftWallInnerBottom, 'rgba(86, 94, 103, 0.72)');
+    fillQuad(rightWallInnerTop, rightWallOuterTop, rightCapOuterTop, rightCapInnerTop, 'rgba(115, 124, 133, 0.72)');
+    fillQuad(rightWallInnerBottom, rightCapInnerBottom, rightCapOuterBottom, rightWallOuterBottom, 'rgba(90, 98, 107, 0.72)');
 
     // Bridge abutments at each shoreline edge
     const abutDepth = 14;
@@ -1107,8 +1121,8 @@
 
     ctx.fillStyle = '#8d939b';
     ctx.beginPath();
-    ctx.moveTo(topRoad.left - sideAtTop - 1, riverTop - 2);
-    ctx.lineTo(topRoad.right + sideAtTop + 1, riverTop - 2);
+    ctx.moveTo(topRoad.left - sideAtTop - 1, riverTop);
+    ctx.lineTo(topRoad.right + sideAtTop + 1, riverTop);
     ctx.lineTo(topRoadIn.right + sideTopIn + 1, riverTop + abutDepth);
     ctx.lineTo(topRoadIn.left - sideTopIn - 1, riverTop + abutDepth);
     ctx.closePath();
@@ -1117,32 +1131,32 @@
     ctx.beginPath();
     ctx.moveTo(botRoadIn.left - sideBotIn - 1, riverBottom - abutDepth);
     ctx.lineTo(botRoadIn.right + sideBotIn + 1, riverBottom - abutDepth);
-    ctx.lineTo(botRoad.right + sideAtBot + 1, riverBottom + 2);
-    ctx.lineTo(botRoad.left - sideAtBot - 1, riverBottom + 2);
+    ctx.lineTo(botRoad.right + sideAtBot + 1, riverBottom);
+    ctx.lineTo(botRoad.left - sideAtBot - 1, riverBottom);
     ctx.closePath();
     ctx.fill();
 
     // Parapet caps, joints, and highlights.
-    ctx.strokeStyle = 'rgba(238, 242, 245, 0.78)';
-    ctx.lineWidth = 2.1;
+    ctx.strokeStyle = 'rgba(236, 241, 245, 0.74)';
+    ctx.lineWidth = 1.7;
     ctx.beginPath();
-    ctx.moveTo(lerp(leftWallOuterTop.x, leftWallInnerTop.x, 0.32), lerp(leftWallOuterTop.y, leftWallInnerTop.y, 0.32));
-    ctx.lineTo(lerp(leftWallOuterBottom.x, leftWallInnerBottom.x, 0.32), lerp(leftWallOuterBottom.y, leftWallInnerBottom.y, 0.32));
+    ctx.moveTo(lerp(leftCapOuterTop.x, leftCapInnerTop.x, 0.56), lerp(leftCapOuterTop.y, leftCapInnerTop.y, 0.56));
+    ctx.lineTo(lerp(leftCapOuterBottom.x, leftCapInnerBottom.x, 0.56), lerp(leftCapOuterBottom.y, leftCapInnerBottom.y, 0.56));
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.moveTo(lerp(rightWallOuterTop.x, rightWallInnerTop.x, 0.32), lerp(rightWallOuterTop.y, rightWallInnerTop.y, 0.32));
-    ctx.lineTo(lerp(rightWallOuterBottom.x, rightWallInnerBottom.x, 0.32), lerp(rightWallOuterBottom.y, rightWallInnerBottom.y, 0.32));
+    ctx.moveTo(lerp(rightCapOuterTop.x, rightCapInnerTop.x, 0.44), lerp(rightCapOuterTop.y, rightCapInnerTop.y, 0.44));
+    ctx.lineTo(lerp(rightCapOuterBottom.x, rightCapInnerBottom.x, 0.44), lerp(rightCapOuterBottom.y, rightCapInnerBottom.y, 0.44));
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(74, 80, 88, 0.45)';
-    ctx.lineWidth = 1.2;
-    for(let i=0;i<6;i++){
-      const wallT = 0.10 + i*0.15;
-      const leftOuter = lerpPoint(leftWallOuterTop, leftWallOuterBottom, wallT);
-      const leftInner = lerpPoint(leftWallInnerTop, leftWallInnerBottom, wallT);
-      const rightOuter = lerpPoint(rightWallOuterTop, rightWallOuterBottom, wallT);
-      const rightInner = lerpPoint(rightWallInnerTop, rightWallInnerBottom, wallT);
+    ctx.strokeStyle = 'rgba(82, 88, 96, 0.38)';
+    ctx.lineWidth = 1.05;
+    for(let i=1;i<=5;i++){
+      const wallT = i / 6;
+      const leftOuter = lerpPoint(leftCapOuterTop, leftCapOuterBottom, wallT);
+      const leftInner = lerpPoint(leftCapInnerTop, leftCapInnerBottom, wallT);
+      const rightOuter = lerpPoint(rightCapOuterTop, rightCapOuterBottom, wallT);
+      const rightInner = lerpPoint(rightCapInnerTop, rightCapInnerBottom, wallT);
       ctx.beginPath();
       ctx.moveTo(leftOuter.x, leftOuter.y);
       ctx.lineTo(leftInner.x, leftInner.y);
@@ -1400,17 +1414,19 @@
   function togglePause(){
     if(!running) return;
     paused = !paused;
+    releasePointer();
+    updatePauseButton();
     if(paused){
       statusEl.style.display='block';
-      statusEl.textContent = 'Paused — Press Space to Resume';
+      statusEl.textContent = 'Paused — Press Space or tap the pause button to resume';
     } else {
       statusEl.style.display='none';
       lastTime = performance.now();
     }
   }
 
-  function startGame(){ if(running) return; running=true; paused=false; statusEl.style.display='none'; reset(); lastTime=performance.now(); requestAnimationFrame(loop); }
-  function endGame(){ running=false; paused=false; statusEl.style.display='block'; statusEl.textContent = 'Game Over — Press any key or tap to Restart'; }
+  function startGame(){ if(running) return; running=true; paused=false; statusEl.style.display='none'; reset(); updatePauseButton(); lastTime=performance.now(); requestAnimationFrame(loop); }
+  function endGame(){ running=false; paused=false; releasePointer(); updatePauseButton(); statusEl.style.display='block'; statusEl.textContent = 'Game Over — Press any key or tap to Restart'; }
 
   function updateUI(){
     const difficulty = getDifficultyForLevel(level);
@@ -1421,7 +1437,7 @@
   }
 
   // initial
-  reset(); statusEl.style.display='block'; statusEl.textContent='Press any key or tap to start';
+  reset(); updatePauseButton(); statusEl.style.display='block'; statusEl.textContent='Press any key or tap to start';
   // expose quick debug on window
   window._game = { start: startGame, stop: endGame, pause: togglePause, tuning: GAME_TUNING, levels: LEVEL_DEFS };
 })();
