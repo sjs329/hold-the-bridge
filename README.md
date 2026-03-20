@@ -35,9 +35,9 @@ python -m http.server 8000
 GitHub Pages deployment:
 1. Commit and push this repo to GitHub.
 2. In GitHub, open `Settings` -> `Pages`.
-3. Under `Build and deployment`, set `Source` to `Deploy from a branch`.
-4. Choose `main` (or `master`) branch and `/ (root)` folder, then Save.
-5. Wait for Pages to build; your game will be published at:
+3. Under `Build and deployment`, set `Source` to `GitHub Actions`.
+4. Push to `main` (or run the `Deploy GitHub Pages` workflow manually).
+5. Wait for the workflow to finish; your game will be published at:
   - `https://<your-username>.github.io/<repo-name>/`
 
 Next steps:
