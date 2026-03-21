@@ -269,14 +269,21 @@
   }
 
   class Enemy{
-    constructor(laneT, y, s, health, attackMin, attackMax){
+    constructor(laneT, y, s, health, attackMin, attackMax, sizeClass){
       this.laneT = laneT; // 0-1 position in lane
       this.y = y;
       this.speed = s||12;
       this.dead = false;
+      this.sizeClass = sizeClass || 'medium';
       this.maxHealthValue = Math.max(1, health||1);
       this.health = this.maxHealthValue;
-      this.baseW = 36; this.baseH = 28;
+      if(this.sizeClass === 'small'){
+        this.baseW = 22; this.baseH = 17;
+      } else if(this.sizeClass === 'giant'){
+        this.baseW = 72; this.baseH = 56;
+      } else {
+        this.baseW = 40; this.baseH = 31;
+      }
       this.attackMin = attackMin || 1.2;
       this.attackMax = attackMax || 2.0;
       this.damageSeed = Math.random() * 1000;
@@ -285,8 +292,8 @@
     }
     resetAttackTimer(){ this.attackTimer = this.attackMin + Math.random()*(this.attackMax-this.attackMin); }
     getPerspective(){
-      const healthScale = clamp(1 + (this.maxHealth() - 1) * 0.22, 1, 1.8);
-      return getLanePerspectiveRect(this.y, 'right', this.laneT, this.baseW, this.baseH, healthScale);
+      // Size is fully determined by sizeClass (baseW/baseH); no additional health scaling needed.
+      return getLanePerspectiveRect(this.y, 'right', this.laneT, this.baseW, this.baseH, 1);
     }
     update(dt){
       // Move with perspective-aware speed: slower at distance, faster up close.
@@ -310,73 +317,194 @@
       ctx.ellipse(cx, p.y + p.h, p.w*0.42, p.h*0.18, 0, 0, Math.PI*2);
       ctx.fill();
 
-      const legW = p.w*0.22;
-      const legH = p.h*0.34;
-      const legY = p.y + p.h - legH;
-      const legLight = Math.round(24 + hpRatio*12 + flash*10);
-      ctx.fillStyle=`hsl(8, 38%, ${legLight}%)`;
-      ctx.fillRect(cx - legW - p.w*0.05, legY, legW, legH);
-      ctx.fillRect(cx + p.w*0.05, legY, legW, legH);
+      if(this.sizeClass === 'giant'){
+        // Giant enemy: dark armored brute with blocky proportions
+        const legW = p.w*0.28;
+        const legH = p.h*0.32;
+        const legY = p.y + p.h - legH;
+        const legLight = Math.round(18 + hpRatio*8 + flash*10);
+        ctx.fillStyle=`hsl(120, 12%, ${legLight}%)`;
+        ctx.fillRect(cx - legW - p.w*0.06, legY, legW, legH);
+        ctx.fillRect(cx + p.w*0.06, legY, legW, legH);
 
-      const torsoW = p.w*0.58;
-      const torsoH = p.h*0.52;
-      const torsoX = cx - torsoW/2;
-      const torsoY = legY - torsoH + 1;
+        const torsoW = p.w*0.72;
+        const torsoH = p.h*0.54;
+        const torsoX = cx - torsoW/2;
+        const torsoY = legY - torsoH + 2;
+        const torsoSat = Math.round(15 - damageRatio*8);
+        const torsoLight = Math.round(28 - damageRatio*14 + flash*12);
+        ctx.fillStyle=`hsl(120, ${torsoSat}%, ${torsoLight}%)`;
+        ctx.fillRect(torsoX, torsoY, torsoW, torsoH);
 
-      const torsoSat = Math.round(58 - damageRatio*26);
-      const torsoLight = Math.round(55 - damageRatio*20 + flash*10);
-      ctx.fillStyle=`hsl(2, ${torsoSat}%, ${torsoLight}%)`;
-      ctx.beginPath();
-      ctx.moveTo(torsoX + torsoW*0.10, torsoY + torsoH);
-      ctx.lineTo(torsoX + torsoW*0.90, torsoY + torsoH);
-      ctx.lineTo(torsoX + torsoW*0.72, torsoY);
-      ctx.lineTo(torsoX + torsoW*0.28, torsoY);
-      ctx.closePath();
-      ctx.fill();
+        // Armor ridges
+        ctx.fillStyle=`hsl(120, 10%, ${Math.round(20 + flash*8)}%)`;
+        ctx.fillRect(torsoX + torsoW*0.10, torsoY + torsoH*0.20, torsoW*0.80, torsoH*0.09);
+        ctx.fillRect(torsoX + torsoW*0.10, torsoY + torsoH*0.50, torsoW*0.80, torsoH*0.09);
 
-      // Integrated damage: chips/cracks appear directly on the body as HP drops.
-      const chipCount = Math.floor(damageRatio * 5);
-      if(chipCount > 0){
-        ctx.fillStyle='rgba(20,8,8,0.62)';
-        for(let i=0;i<chipCount;i++){
-          const chipX = cx + Math.sin(this.damageSeed + i*1.9) * torsoW * 0.24;
-          const chipY = torsoY + torsoH * (0.20 + i*0.17);
-          const chipR = Math.max(1.1, p.scale*(1.7 + i*0.25));
-          ctx.beginPath();
-          ctx.arc(chipX, chipY, chipR, 0, Math.PI*2);
-          ctx.fill();
+        const chipCount = Math.floor(damageRatio * 7);
+        if(chipCount > 0){
+          ctx.fillStyle='rgba(8,18,8,0.70)';
+          for(let i=0;i<chipCount;i++){
+            const chipX = cx + Math.sin(this.damageSeed + i*1.9) * torsoW * 0.28;
+            const chipY = torsoY + torsoH * (0.15 + i*0.12);
+            const chipR = Math.max(1.5, p.scale*(2.2 + i*0.30));
+            ctx.beginPath();
+            ctx.arc(chipX, chipY, chipR, 0, Math.PI*2);
+            ctx.fill();
+          }
         }
-      }
 
-      const crackCount = Math.floor(damageRatio * 3);
-      if(crackCount > 0){
-        ctx.strokeStyle='rgba(28,10,10,0.68)';
-        ctx.lineWidth=Math.max(1, p.scale*1.1);
-        for(let i=0;i<crackCount;i++){
-          const startX = cx + Math.sin(this.damageSeed*1.7 + i*2.1) * torsoW * 0.16;
-          const startY = torsoY + torsoH * (0.16 + i*0.24);
-          const dir = i%2===0 ? 1 : -1;
-          ctx.beginPath();
-          ctx.moveTo(startX, startY);
-          ctx.lineTo(startX + torsoW*0.18*dir, startY + torsoH*0.14);
-          ctx.lineTo(startX + torsoW*0.05, startY + torsoH*0.30);
-          ctx.stroke();
+        const crackCount = Math.floor(damageRatio * 4);
+        if(crackCount > 0){
+          ctx.strokeStyle='rgba(10,22,10,0.72)';
+          ctx.lineWidth=Math.max(1.5, p.scale*1.5);
+          for(let i=0;i<crackCount;i++){
+            const startX = cx + Math.sin(this.damageSeed*1.7 + i*2.1) * torsoW * 0.20;
+            const startY = torsoY + torsoH * (0.12 + i*0.22);
+            const dir = i%2===0 ? 1 : -1;
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(startX + torsoW*0.22*dir, startY + torsoH*0.16);
+            ctx.lineTo(startX + torsoW*0.06, startY + torsoH*0.32);
+            ctx.stroke();
+          }
         }
+
+        const headR = Math.max(3, p.w*0.19);
+        const headSat = Math.round(12 - damageRatio*8);
+        const headLight = Math.round(26 - damageRatio*10 + flash*10);
+        ctx.fillStyle=`hsl(120, ${headSat}%, ${headLight}%)`;
+        ctx.beginPath();
+        ctx.arc(cx, torsoY - headR*0.30, headR, 0, Math.PI*2);
+        ctx.fill();
+
+        // Glowing red eyes
+        ctx.fillStyle=`hsl(0, 95%, ${Math.round(42 + flash*25)}%)`;
+        ctx.fillRect(cx - headR*0.50, torsoY - headR*0.52, headR*0.26, headR*0.18);
+        ctx.fillRect(cx + headR*0.24, torsoY - headR*0.52, headR*0.26, headR*0.18);
+
+      } else if(this.sizeClass === 'small'){
+        // Small enemy: quick, lighter-colored scout
+        const legW = p.w*0.20;
+        const legH = p.h*0.38;
+        const legY = p.y + p.h - legH;
+        const legLight = Math.round(32 + hpRatio*12 + flash*10);
+        ctx.fillStyle=`hsl(22, 52%, ${legLight}%)`;
+        ctx.fillRect(cx - legW - p.w*0.04, legY, legW, legH);
+        ctx.fillRect(cx + p.w*0.04, legY, legW, legH);
+
+        const torsoW = p.w*0.52;
+        const torsoH = p.h*0.46;
+        const torsoX = cx - torsoW/2;
+        const torsoY = legY - torsoH + 1;
+        const torsoSat = Math.round(62 - damageRatio*26);
+        const torsoLight = Math.round(60 - damageRatio*20 + flash*10);
+        ctx.fillStyle=`hsl(22, ${torsoSat}%, ${torsoLight}%)`;
+        ctx.beginPath();
+        ctx.moveTo(torsoX + torsoW*0.12, torsoY + torsoH);
+        ctx.lineTo(torsoX + torsoW*0.88, torsoY + torsoH);
+        ctx.lineTo(torsoX + torsoW*0.68, torsoY);
+        ctx.lineTo(torsoX + torsoW*0.32, torsoY);
+        ctx.closePath();
+        ctx.fill();
+
+        const chipCount = Math.floor(damageRatio * 3);
+        if(chipCount > 0){
+          ctx.fillStyle='rgba(20,10,5,0.62)';
+          for(let i=0;i<chipCount;i++){
+            const chipX = cx + Math.sin(this.damageSeed + i*1.9) * torsoW * 0.22;
+            const chipY = torsoY + torsoH * (0.25 + i*0.22);
+            const chipR = Math.max(1.0, p.scale*(1.4 + i*0.20));
+            ctx.beginPath();
+            ctx.arc(chipX, chipY, chipR, 0, Math.PI*2);
+            ctx.fill();
+          }
+        }
+
+        const headR = Math.max(1.5, p.w*0.15);
+        const headSat = Math.round(52 - damageRatio*18);
+        const headLight = Math.round(50 - damageRatio*14 + flash*8);
+        ctx.fillStyle=`hsl(20, ${headSat}%, ${headLight}%)`;
+        ctx.beginPath();
+        ctx.arc(cx, torsoY - headR*0.30, headR, 0, Math.PI*2);
+        ctx.fill();
+
+        const eyeHue = Math.round(30 + hpRatio*60);
+        const eyeLight = Math.round(52 + hpRatio*18 + flash*18);
+        ctx.fillStyle=`hsl(${eyeHue}, 90%, ${eyeLight}%)`;
+        ctx.fillRect(cx - headR*0.42, torsoY - headR*0.44, headR*0.22, headR*0.14);
+        ctx.fillRect(cx + headR*0.20, torsoY - headR*0.44, headR*0.22, headR*0.14);
+
+      } else {
+        // Medium enemy: standard soldier
+        const legW = p.w*0.22;
+        const legH = p.h*0.34;
+        const legY = p.y + p.h - legH;
+        const legLight = Math.round(24 + hpRatio*12 + flash*10);
+        ctx.fillStyle=`hsl(8, 38%, ${legLight}%)`;
+        ctx.fillRect(cx - legW - p.w*0.05, legY, legW, legH);
+        ctx.fillRect(cx + p.w*0.05, legY, legW, legH);
+
+        const torsoW = p.w*0.58;
+        const torsoH = p.h*0.52;
+        const torsoX = cx - torsoW/2;
+        const torsoY = legY - torsoH + 1;
+
+        const torsoSat = Math.round(58 - damageRatio*26);
+        const torsoLight = Math.round(55 - damageRatio*20 + flash*10);
+        ctx.fillStyle=`hsl(2, ${torsoSat}%, ${torsoLight}%)`;
+        ctx.beginPath();
+        ctx.moveTo(torsoX + torsoW*0.10, torsoY + torsoH);
+        ctx.lineTo(torsoX + torsoW*0.90, torsoY + torsoH);
+        ctx.lineTo(torsoX + torsoW*0.72, torsoY);
+        ctx.lineTo(torsoX + torsoW*0.28, torsoY);
+        ctx.closePath();
+        ctx.fill();
+
+        // Integrated damage: chips/cracks appear directly on the body as HP drops.
+        const chipCount = Math.floor(damageRatio * 5);
+        if(chipCount > 0){
+          ctx.fillStyle='rgba(20,8,8,0.62)';
+          for(let i=0;i<chipCount;i++){
+            const chipX = cx + Math.sin(this.damageSeed + i*1.9) * torsoW * 0.24;
+            const chipY = torsoY + torsoH * (0.20 + i*0.17);
+            const chipR = Math.max(1.1, p.scale*(1.7 + i*0.25));
+            ctx.beginPath();
+            ctx.arc(chipX, chipY, chipR, 0, Math.PI*2);
+            ctx.fill();
+          }
+        }
+
+        const crackCount = Math.floor(damageRatio * 3);
+        if(crackCount > 0){
+          ctx.strokeStyle='rgba(28,10,10,0.68)';
+          ctx.lineWidth=Math.max(1, p.scale*1.1);
+          for(let i=0;i<crackCount;i++){
+            const startX = cx + Math.sin(this.damageSeed*1.7 + i*2.1) * torsoW * 0.16;
+            const startY = torsoY + torsoH * (0.16 + i*0.24);
+            const dir = i%2===0 ? 1 : -1;
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(startX + torsoW*0.18*dir, startY + torsoH*0.14);
+            ctx.lineTo(startX + torsoW*0.05, startY + torsoH*0.30);
+            ctx.stroke();
+          }
+        }
+
+        const headR = Math.max(2, p.w*0.16);
+        const headSat = Math.round(48 - damageRatio*18);
+        const headLight = Math.round(46 - damageRatio*14 + flash*8);
+        ctx.fillStyle=`hsl(3, ${headSat}%, ${headLight}%)`;
+        ctx.beginPath();
+        ctx.arc(cx, torsoY - headR*0.35, headR, 0, Math.PI*2);
+        ctx.fill();
+
+        const eyeHue = Math.round(6 + hpRatio*88);
+        const eyeLight = Math.round(46 + hpRatio*16 + flash*18);
+        ctx.fillStyle=`hsl(${eyeHue}, 90%, ${eyeLight}%)`;
+        ctx.fillRect(cx - headR*0.45, torsoY - headR*0.48, headR*0.22, headR*0.14);
+        ctx.fillRect(cx + headR*0.23, torsoY - headR*0.48, headR*0.22, headR*0.14);
       }
-
-      const headR = Math.max(2, p.w*0.16);
-      const headSat = Math.round(48 - damageRatio*18);
-      const headLight = Math.round(46 - damageRatio*14 + flash*8);
-      ctx.fillStyle=`hsl(3, ${headSat}%, ${headLight}%)`;
-      ctx.beginPath();
-      ctx.arc(cx, torsoY - headR*0.35, headR, 0, Math.PI*2);
-      ctx.fill();
-
-      const eyeHue = Math.round(6 + hpRatio*88);
-      const eyeLight = Math.round(46 + hpRatio*16 + flash*18);
-      ctx.fillStyle=`hsl(${eyeHue}, 90%, ${eyeLight}%)`;
-      ctx.fillRect(cx - headR*0.45, torsoY - headR*0.48, headR*0.22, headR*0.14);
-      ctx.fillRect(cx + headR*0.23, torsoY - headR*0.48, headR*0.22, headR*0.14);
 
       if(flash > 0.02){
         ctx.strokeStyle = `rgba(255, 240, 210, ${0.18 + flash*0.22})`;
@@ -777,9 +905,38 @@
           const tBase = Math.random()*0.78 + 0.11;
           const t = tBase + (Math.random()-0.5)*0.10;
           const y = g.topY + 10 - Math.random()*26;
-          const health = 1 + difficulty.healthBonus + (Math.random() < difficulty.eliteChance ? 1 : 0);
-          const speed = difficulty.speedMin + Math.random()*(difficulty.speedMax - difficulty.speedMin);
-          const enemy = new Enemy(clamp(t, 0, 1), y, speed, health, difficulty.attackMin, difficulty.attackMax);
+
+          // Determine size class from per-level spawn probabilities.
+          const sizeRoll = Math.random();
+          let sizeClass;
+          if(sizeRoll < difficulty.giantChance){
+            sizeClass = 'giant';
+          } else if(sizeRoll < difficulty.giantChance + difficulty.smallChance){
+            sizeClass = 'small';
+          } else {
+            sizeClass = 'medium';
+          }
+
+          // Health, speed, and attack rate differ meaningfully by size class.
+          let health, speedMult, attackMult;
+          if(sizeClass === 'small'){
+            health = 1;
+            speedMult = 1.35;
+            attackMult = 1.4;
+          } else if(sizeClass === 'giant'){
+            health = 8 + difficulty.healthBonus + (Math.random() < difficulty.eliteChance ? 2 : 0);
+            speedMult = 0.50;
+            attackMult = 0.65;
+          } else {
+            health = 1 + difficulty.healthBonus + (Math.random() < difficulty.eliteChance ? 1 : 0);
+            speedMult = 1.0;
+            attackMult = 1.0;
+          }
+
+          const speed = (difficulty.speedMin + Math.random()*(difficulty.speedMax - difficulty.speedMin)) * speedMult;
+          const attackMin = difficulty.attackMin * attackMult;
+          const attackMax = difficulty.attackMax * attackMult;
+          const enemy = new Enemy(clamp(t, 0, 1), y, speed, health, attackMin, attackMax, sizeClass);
           enemies.push(enemy);
           levelSpawned++;
         }
