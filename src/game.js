@@ -731,6 +731,7 @@
       slowFieldTimer = Math.max(slowFieldTimer, GAME_TUNING.leftLane.fieldDuration);
       if(sourcePoint) queueFieldChargeTransfer(sourcePoint.x, sourcePoint.y);
       fieldProjectorCharge = Math.min(1, fieldProjectorCharge + 0.45);
+      rebuffEnemiesAtWall();
       showTransientStatus(`${FIELD_EFFECT_NAME} Active! Horde Slowed`, 1.2);
       notifPopup = 'Field Online';
     }
@@ -839,6 +840,46 @@
     }
 
     if(needsUIRefresh) updateUI();
+  }
+
+  function rebuffEnemiesAtWall(){
+    const wallRect = getWallRect();
+    const rebuffDist = 50;
+    for(let i=0;i<enemies.length;i++){
+      const enemy = enemies[i];
+      if(enemy.dead) continue;
+      const b = enemy._bounds || enemy.bounds();
+      if(collide(b, wallRect)){
+        enemy.y -= rebuffDist;
+        if(enemy._bounds) enemy._bounds.y -= rebuffDist;
+      }
+    }
+  }
+
+  function resolveEnemyEnemyCollisions(){
+    for(let i=0;i<enemies.length;i++){
+      const a = enemies[i];
+      if(a.dead) continue;
+      const ba = a._bounds;
+      for(let j=i+1;j<enemies.length;j++){
+        const b = enemies[j];
+        if(b.dead) continue;
+        const bb = b._bounds;
+        if(!collide(ba, bb)) continue;
+
+        const overlapY = Math.min(ba.y + ba.h, bb.y + bb.h) - Math.max(ba.y, bb.y);
+        if(overlapY <= 0) continue;
+
+        // Push the trailing enemy (further from wall = smaller y) back
+        if(ba.y <= bb.y){
+          a.y -= overlapY;
+          ba.y -= overlapY;
+        } else {
+          b.y -= overlapY;
+          bb.y -= overlapY;
+        }
+      }
+    }
   }
 
   function resolvePowerupContacts(){
@@ -978,6 +1019,7 @@
     updateEntities(dt);
     resolveBulletCollisions(gunCap);
     resolveEnemyContacts(dt);
+    resolveEnemyEnemyCollisions();
     if(!running) return;
     resolvePowerupContacts();
 
