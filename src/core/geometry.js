@@ -108,6 +108,7 @@
       getRoadBounds,
       getLanePerspectiveRect,
       getPlayerRoadClamp,
+      getEnemyLaneBounds,
       getWallRect
     };
   }

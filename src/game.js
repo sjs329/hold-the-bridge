@@ -21,6 +21,7 @@
     getRoadBounds,
     getLanePerspectiveRect,
     getPlayerRoadClamp,
+    getEnemyLaneBounds,
     getWallRect: getWallRectForPlayer,
     setSize: setGeometrySize,
     clearCaches: clearGeometryCaches
@@ -288,6 +289,7 @@
       this.attackMax = attackMax || 2.0;
       this.damageSeed = Math.random() * 1000;
       this.hitFlash = 0;
+      this.lateralVel = 0;
       this.resetAttackTimer();
     }
     resetAttackTimer(){ this.attackTimer = this.attackMin + Math.random()*(this.attackMax-this.attackMin); }
@@ -301,6 +303,12 @@
       this.y += this.speed * getEnemySlowMultiplier() * getPerspectiveSpeedMultiplier(depth) * dt;
       this.hitFlash = Math.max(0, this.hitFlash - dt * 6);
       if(this.y>H+50) this.dead=true;
+      // Apply lateral steering so enemies can slide around each other.
+      if(this.lateralVel !== 0){
+        this.laneT = clamp(this.laneT + this.lateralVel * dt, 0, 1);
+        this.lateralVel *= Math.max(0, 1 - dt * 2.5);
+        if(Math.abs(this.lateralVel) < 0.005) this.lateralVel = 0;
+      }
     }
     hit(){ this.health--; this.hitFlash = 1; if(this.health<=0) this.dead=true; }
     draw(){
@@ -650,6 +658,8 @@
   let pickupFlashTimer = 0;
   let levelTransitionTimer = 0, levelTransitionLabel = '';
   let wallHealth = LEVEL_DEFS[0].wall.maxHealth, wallMax = LEVEL_DEFS[0].wall.maxHealth, wallBroken = false;
+  let wallRebuffEffects = [];
+  let wallContactIntensity = 0;
 
   function showTransientStatus(text, duration){
     statusEl.textContent = text;
@@ -681,6 +691,16 @@
         fieldChargeTransfers.splice(i, 1);
       }
     }
+
+    // Advance wall-rebuff shockwave rings.
+    for(let i = wallRebuffEffects.length - 1; i >= 0; i--){
+      wallRebuffEffects[i].age += dt;
+      if(wallRebuffEffects[i].age >= wallRebuffEffects[i].maxAge){
+        wallRebuffEffects.splice(i, 1);
+      }
+    }
+    // Decay wall impact glow.
+    wallContactIntensity = Math.max(0, wallContactIntensity - dt * 2.5);
 
     if(transientStatusTimer > 0){
       transientStatusTimer = Math.max(0, transientStatusTimer - dt);
@@ -815,6 +835,9 @@
           enemyBounds.y -= overlap;
         }
 
+        // Build up the impact glow while enemies press against the wall.
+        wallContactIntensity = Math.min(1, wallContactIntensity + dt * 4);
+
         enemy.attackTimer -= dt;
         if(enemy.attackTimer <= 0){
           enemy.resetAttackTimer();
@@ -844,15 +867,30 @@
 
   function rebuffEnemiesAtWall(){
     const wallRect = getWallRect();
+    // Extend the rebuff zone upward so enemies approaching the wall also get pushed.
+    const rebuffRange = 70;
+    const rebuffZone = { x: wallRect.x, y: wallRect.y - rebuffRange, w: wallRect.w, h: wallRect.h + rebuffRange };
     const rebuffDist = 50;
+    let anyAffected = false;
     for(let i=0;i<enemies.length;i++){
       const enemy = enemies[i];
       if(enemy.dead) continue;
       const b = enemy._bounds || enemy.bounds();
-      if(collide(b, wallRect)){
+      if(collide(b, rebuffZone)){
         enemy.y -= rebuffDist;
         if(enemy._bounds) enemy._bounds.y -= rebuffDist;
+        anyAffected = true;
       }
+    }
+    // Spawn a shockwave ring at the wall face whenever the rebuff fires on at least one enemy.
+    if(anyAffected){
+      wallRebuffEffects.push({
+        cx: wallRect.x + wallRect.w / 2,
+        cy: wallRect.y,
+        maxRadius: rebuffRange + rebuffDist,
+        age: 0,
+        maxAge: 0.55
+      });
     }
   }
 
@@ -867,16 +905,46 @@
         const bb = b._bounds;
         if(!collide(ba, bb)) continue;
 
+        const overlapX = Math.min(ba.x + ba.w, bb.x + bb.w) - Math.max(ba.x, bb.x);
         const overlapY = Math.min(ba.y + ba.h, bb.y + bb.h) - Math.max(ba.y, bb.y);
-        if(overlapY <= 0) continue;
+        if(overlapX <= 0 || overlapY <= 0) continue;
 
-        // Push the trailing enemy (further from wall = smaller y) back
-        if(ba.y <= bb.y){
-          a.y -= overlapY;
-          ba.y -= overlapY;
+        // Compute lane width at average depth for laneT ↔ pixel conversion.
+        const avgY = (a.y + b.y) / 2;
+        const lane = getEnemyLaneBounds(avgY);
+        const laneWidth = Math.max(1, lane.right - lane.left);
+
+        if(overlapX <= overlapY){
+          // Enemies are mostly side-by-side: push apart laterally.
+          const half = overlapX / 2;
+          if(ba.x < bb.x){
+            a.laneT = clamp(a.laneT - half / laneWidth, 0, 1);
+            b.laneT = clamp(b.laneT + half / laneWidth, 0, 1);
+            ba.x -= half; bb.x += half;
+          } else {
+            a.laneT = clamp(a.laneT + half / laneWidth, 0, 1);
+            b.laneT = clamp(b.laneT - half / laneWidth, 0, 1);
+            ba.x += half; bb.x -= half;
+          }
         } else {
-          b.y -= overlapY;
-          bb.y -= overlapY;
+          // Enemies are mostly front-back: push trailing enemy back and
+          // give it a lateral nudge so it can work its way around the leader.
+          const aCenterX = ba.x + ba.w / 2;
+          const bCenterX = bb.x + bb.w / 2;
+          if(ba.y <= bb.y){
+            // a is trailing (further from wall); push a back.
+            a.y -= overlapY;
+            ba.y -= overlapY;
+            // Nudge a to the side away from b so it finds a path around.
+            const nudgeDir = aCenterX < bCenterX ? -1 : aCenterX > bCenterX ? 1 : (Math.random() < 0.5 ? -1 : 1);
+            a.lateralVel = clamp(a.lateralVel + nudgeDir * 0.5, -1, 1);
+          } else {
+            // b is trailing; push b back.
+            b.y -= overlapY;
+            bb.y -= overlapY;
+            const nudgeDir = bCenterX < aCenterX ? -1 : bCenterX > aCenterX ? 1 : (Math.random() < 0.5 ? -1 : 1);
+            b.lateralVel = clamp(b.lateralVel + nudgeDir * 0.5, -1, 1);
+          }
         }
       }
     }
@@ -917,6 +985,8 @@
     wallMax = openingDifficulty.wallMaxHealth;
     wallHealth = wallMax;
     wallBroken = false;
+    wallRebuffEffects = [];
+    wallContactIntensity = 0;
     notifPopup = null; notifPopupTimer = 0;
     transientStatusTimer = 0;
     pickupFlashTimer = 0;
@@ -1598,6 +1668,19 @@
           ctx.stroke();
         }
       }
+
+      // Impact glow: flares up while enemies are pressing against the wall.
+      if(wallContactIntensity > 0){
+        const glowAlpha = wallContactIntensity * 0.55;
+        ctx.save();
+        ctx.globalAlpha = glowAlpha;
+        ctx.shadowColor = '#ff6622';
+        ctx.shadowBlur = 14;
+        ctx.strokeStyle = '#ffaa55';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(wallRect.x - 1, wallRect.y - 1, wallRect.w + 2, wallRect.h + 2);
+        ctx.restore();
+      }
     } else {
       ctx.strokeStyle = '#f44';
       ctx.lineWidth = 3;
@@ -1606,6 +1689,26 @@
       ctx.setLineDash([]);
     }
     ctx.restore();
+
+    // Wall-rebuff shockwave rings: expanding arcs that fade as they travel outward.
+    if(wallRebuffEffects.length > 0){
+      ctx.save();
+      for(const fx of wallRebuffEffects){
+        const progress = fx.age / fx.maxAge;
+        const radius = fx.maxRadius * progress;
+        const alpha = 0.75 * (1 - progress);
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = '#66ddff';
+        ctx.lineWidth = Math.max(1, 3.5 * (1 - progress * 0.6));
+        ctx.shadowColor = '#44aaff';
+        ctx.shadowBlur = 8;
+        // Draw a half-ellipse opening upward from the wall face to show the push wave.
+        ctx.beginPath();
+        ctx.ellipse(fx.cx, fx.cy, radius * 1.1, radius * 0.55, 0, Math.PI, 0);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
 
     // Foreground
     player.draw();
