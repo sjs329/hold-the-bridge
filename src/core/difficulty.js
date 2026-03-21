@@ -32,7 +32,8 @@
           attackMin: Math.max(0.60, last.enemy.attackMin - overflow * e.attackDropPerLevel),
           attackMax: Math.max(0.90, last.enemy.attackMax - overflow * e.attackDropPerLevel),
           giantChance: clamp(last.enemy.giantChance + overflow * e.giantChancePerLevel, 0, 0.45),
-          smallChance: clamp(last.enemy.smallChance - overflow * e.smallChanceDropPerLevel, 0.05, 0.40)
+          smallChance: clamp(last.enemy.smallChance - overflow * e.smallChanceDropPerLevel, 0.05, 0.40),
+          bossChance: clamp((last.enemy.bossChance || 0) + overflow * e.bossChancePerLevel, 0, 0.30)
         },
         powerups: {
           intervalMin: Math.max(1.8, last.powerups.intervalMin - overflow * e.powerupIntervalDropPerLevel),
@@ -72,6 +73,7 @@
       const attackMax = Math.max(0.75, enemy.attackMax / intensity);
       const giantChance = enemy.giantChance;
       const smallChance = enemy.smallChance;
+      const bossChance = enemy.bossChance || 0;
 
       const difficulty = {
         spawnInterval,
@@ -85,6 +87,7 @@
         attackMax,
         giantChance,
         smallChance,
+        bossChance,
         powerupIntervalMin: powerups.intervalMin,
         powerupIntervalMax: powerups.intervalMax,
         lockBase: powerups.lockBase,
