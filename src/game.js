@@ -289,6 +289,8 @@
         this.baseW = 22; this.baseH = 17;
       } else if(this.sizeClass === 'giant'){
         this.baseW = 72; this.baseH = 56;
+      } else if(this.sizeClass === 'boss'){
+        this.baseW = 100; this.baseH = 78;
       } else {
         this.baseW = 40; this.baseH = 31;
       }
@@ -340,7 +342,104 @@
       ctx.ellipse(cx, p.y + p.h, p.w*0.42, p.h*0.18, 0, 0, Math.PI*2);
       ctx.fill();
 
-      if(this.sizeClass === 'giant'){
+      if(this.sizeClass === 'boss'){
+        // Boss: towering armored commander with crown and gold pauldrons
+        const legW = p.w*0.28;
+        const legH = p.h*0.28;
+        const legY = p.y + p.h - legH;
+        const legLight = Math.round(16 + hpRatio*6 + flash*10);
+        ctx.fillStyle=`hsl(270, 28%, ${legLight}%)`;
+        ctx.fillRect(cx - legW - p.w*0.08, legY, legW, legH);
+        ctx.fillRect(cx + p.w*0.08, legY, legW, legH);
+
+        const torsoW = p.w*0.78;
+        const torsoH = p.h*0.50;
+        const torsoX = cx - torsoW/2;
+        const torsoY = legY - torsoH + 2;
+        const torsoSat = Math.round(38 - damageRatio*14);
+        const torsoLight = Math.round(22 - damageRatio*10 + flash*14);
+        ctx.fillStyle=`hsl(270, ${torsoSat}%, ${torsoLight}%)`;
+        ctx.fillRect(torsoX, torsoY, torsoW, torsoH);
+
+        // Gold shoulder pauldrons
+        const pauldronLight = Math.round(42 + flash*22);
+        ctx.fillStyle=`hsl(44, 80%, ${pauldronLight}%)`;
+        ctx.fillRect(torsoX - p.w*0.08, torsoY, p.w*0.20, torsoH*0.55);
+        ctx.fillRect(torsoX + torsoW - p.w*0.12, torsoY, p.w*0.20, torsoH*0.55);
+
+        // Gold armor trim stripes
+        ctx.fillStyle=`hsl(44, 65%, ${Math.round(36 + flash*14)}%)`;
+        ctx.fillRect(torsoX + torsoW*0.28, torsoY + torsoH*0.18, torsoW*0.44, torsoH*0.08);
+        ctx.fillRect(torsoX + torsoW*0.28, torsoY + torsoH*0.48, torsoW*0.44, torsoH*0.08);
+
+        const chipCount = Math.floor(damageRatio * 9);
+        if(chipCount > 0){
+          ctx.fillStyle='rgba(5,0,10,0.75)';
+          for(let i=0;i<chipCount;i++){
+            const chipX = cx + Math.sin(this.damageSeed + i*1.9) * torsoW * 0.28;
+            const chipY = torsoY + torsoH * (0.12 + i*0.09);
+            const chipR = Math.max(1.5, p.scale*(2.5 + i*0.28));
+            ctx.beginPath();
+            ctx.arc(chipX, chipY, chipR, 0, Math.PI*2);
+            ctx.fill();
+          }
+        }
+
+        const crackCount = Math.floor(damageRatio * 5);
+        if(crackCount > 0){
+          ctx.strokeStyle='rgba(8,0,16,0.74)';
+          ctx.lineWidth=Math.max(1.5, p.scale*1.5);
+          for(let i=0;i<crackCount;i++){
+            const startX = cx + Math.sin(this.damageSeed*1.7 + i*2.1) * torsoW * 0.22;
+            const startY = torsoY + torsoH * (0.10 + i*0.18);
+            const dir = i%2===0 ? 1 : -1;
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(startX + torsoW*0.22*dir, startY + torsoH*0.16);
+            ctx.lineTo(startX + torsoW*0.06, startY + torsoH*0.32);
+            ctx.stroke();
+          }
+        }
+
+        const headR = Math.max(4, p.w*0.22);
+        const headSat = Math.round(30 - damageRatio*12);
+        const headLight = Math.round(20 - damageRatio*8 + flash*12);
+        ctx.fillStyle=`hsl(270, ${headSat}%, ${headLight}%)`;
+        ctx.beginPath();
+        ctx.arc(cx, torsoY - headR*0.25, headR, 0, Math.PI*2);
+        ctx.fill();
+
+        // Gold crown with three spikes
+        const crownGold = Math.round(46 + flash*20);
+        ctx.fillStyle=`hsl(44, 85%, ${crownGold}%)`;
+        const crownBaseY = torsoY - headR*0.25 - headR;
+        const crownW = headR*1.9;
+        const spikeH = headR*0.72;
+        ctx.beginPath();
+        ctx.moveTo(cx - crownW*0.44, crownBaseY + spikeH*0.30);
+        ctx.lineTo(cx - crownW*0.34, crownBaseY - spikeH*0.42);
+        ctx.lineTo(cx - crownW*0.20, crownBaseY + spikeH*0.30);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(cx - crownW*0.10, crownBaseY + spikeH*0.08);
+        ctx.lineTo(cx, crownBaseY - spikeH*0.82);
+        ctx.lineTo(cx + crownW*0.10, crownBaseY + spikeH*0.08);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(cx + crownW*0.20, crownBaseY + spikeH*0.30);
+        ctx.lineTo(cx + crownW*0.34, crownBaseY - spikeH*0.42);
+        ctx.lineTo(cx + crownW*0.44, crownBaseY + spikeH*0.30);
+        ctx.closePath();
+        ctx.fill();
+
+        // Glowing yellow eyes
+        ctx.fillStyle=`hsl(50, 100%, ${Math.round(55 + flash*30)}%)`;
+        ctx.fillRect(cx - headR*0.52, torsoY - headR*0.52, headR*0.28, headR*0.20);
+        ctx.fillRect(cx + headR*0.24, torsoY - headR*0.52, headR*0.28, headR*0.20);
+
+      } else if(this.sizeClass === 'giant'){
         // Giant enemy: dark armored brute with blocky proportions
         const legW = p.w*0.28;
         const legH = p.h*0.32;
@@ -1132,6 +1231,11 @@
         if(Math.random() < difficulty.burstChance * 0.65) burst++;
         if(Math.random() < difficulty.burstChance * 0.40) burst++;
         burst = Math.min(slots, burst);
+        // Determine if bosses are eligible this spawn event.
+        const progressRatio = difficulty.enemyQuota > 0 ? levelSpawned / difficulty.enemyQuota : 0;
+        const isEndOfWave = progressRatio >= GAME_TUNING.boss.waveThreshold;
+        const canSpawnBoss = level > 1 && difficulty.bossChance > 0 &&
+          (isEndOfWave || level >= GAME_TUNING.boss.midLevelFromLevel);
         for(let i=0;i<burst;i++){
           // Keep some clustering for horde feel without overwhelming density.
           const tBase = Math.random()*0.78 + 0.11;
@@ -1141,7 +1245,9 @@
           // Determine size class from per-level spawn probabilities.
           const sizeRoll = Math.random();
           let sizeClass;
-          if(sizeRoll < difficulty.giantChance){
+          if(canSpawnBoss && sizeRoll < difficulty.bossChance){
+            sizeClass = 'boss';
+          } else if(sizeRoll < difficulty.giantChance){
             sizeClass = 'giant';
           } else if(sizeRoll < difficulty.giantChance + difficulty.smallChance){
             sizeClass = 'small';
@@ -1159,6 +1265,10 @@
             health = 8 + difficulty.healthBonus + (Math.random() < difficulty.eliteChance ? 2 : 0);
             speedMult = 0.50;
             attackMult = 0.65;
+          } else if(sizeClass === 'boss'){
+            health = 20 + difficulty.healthBonus + (Math.random() < difficulty.eliteChance ? 3 : 0);
+            speedMult = 0.65;
+            attackMult = 0.45;
           } else {
             health = 1 + difficulty.healthBonus + (Math.random() < difficulty.eliteChance ? 1 : 0);
             speedMult = 1.0;
