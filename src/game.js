@@ -863,6 +863,7 @@
       const wallRatio = wallBroken ? 0 : wallHealth / Math.max(1, wallMax);
       level++;
       levelSpawned = 0;
+      bossesSpawnedThisLevel = 0;
       levelMultiShotUpgrades = 0;
       slowFieldTimer = 0;
       const nextDifficulty = getDifficultyForLevel(level);
@@ -877,6 +878,7 @@
   let player, bullets, enemies, powerups, lastTime, accum=0, spawnTimer=0, powerupTimer=0, running=false, paused=false;
   let level = 1;
   let levelSpawned = 0;
+  let bossesSpawnedThisLevel = 0;
   let levelMultiShotUpgrades = 0;
   let slowFieldTimer = 0;
   let fieldProjectorCharge = 0;
@@ -1197,6 +1199,7 @@
     lastTime=performance.now(); spawnTimer=0; powerupTimer=0;
     level = 1;
     levelSpawned = 0;
+    bossesSpawnedThisLevel = 0;
     levelMultiShotUpgrades = 0;
     slowFieldTimer = 0;
     fieldProjectorCharge = 0;
@@ -1231,11 +1234,10 @@
         if(Math.random() < difficulty.burstChance * 0.65) burst++;
         if(Math.random() < difficulty.burstChance * 0.40) burst++;
         burst = Math.min(slots, burst);
-        // Determine if bosses are eligible this spawn event.
+        // Determine if the last 25% of the wave has started.
         const progressRatio = difficulty.enemyQuota > 0 ? levelSpawned / difficulty.enemyQuota : 0;
         const isEndOfWave = progressRatio >= GAME_TUNING.boss.waveThreshold;
-        const canSpawnBoss = level > 1 && difficulty.bossChance > 0 &&
-          (isEndOfWave || level >= GAME_TUNING.boss.midLevelFromLevel);
+        const maxBosses = difficulty.maxBossesPerLevel || 0;
         for(let i=0;i<burst;i++){
           // Keep some clustering for horde feel without overwhelming density.
           const tBase = Math.random()*0.78 + 0.11;
@@ -1243,16 +1245,23 @@
           const y = g.topY + 10 - Math.random()*26;
 
           // Determine size class from per-level spawn probabilities.
-          const sizeRoll = Math.random();
           let sizeClass;
-          if(canSpawnBoss && sizeRoll < difficulty.bossChance){
+          if(isEndOfWave && bossesSpawnedThisLevel < maxBosses) {
+            // Force boss(es) first in the last quarter of the wave, one per burst slot until quota reached.
             sizeClass = 'boss';
-          } else if(sizeRoll < difficulty.giantChance){
-            sizeClass = 'giant';
-          } else if(sizeRoll < difficulty.giantChance + difficulty.smallChance){
+            bossesSpawnedThisLevel++;
+          } else if(isEndOfWave) {
+            // After bosses are placed, flood with small enemies that swarm around them.
             sizeClass = 'small';
           } else {
-            sizeClass = 'medium';
+            const sizeRoll = Math.random();
+            if(sizeRoll < difficulty.giantChance){
+              sizeClass = 'giant';
+            } else if(sizeRoll < difficulty.giantChance + difficulty.smallChance){
+              sizeClass = 'small';
+            } else {
+              sizeClass = 'medium';
+            }
           }
 
           // Health, speed, and attack rate differ meaningfully by size class.
@@ -1266,7 +1275,7 @@
             speedMult = 0.50;
             attackMult = 0.65;
           } else if(sizeClass === 'boss'){
-            health = 20 + difficulty.healthBonus + (Math.random() < difficulty.eliteChance ? 3 : 0);
+            health = 50 + difficulty.healthBonus * 2 + (Math.random() < difficulty.eliteChance ? 5 : 0);
             speedMult = 0.65;
             attackMult = 0.45;
           } else {
@@ -1826,8 +1835,14 @@
     ctx.restore();
 
     // Draw enemies back-to-front so closer ones naturally occlude farther ones.
+    // Bosses are drawn in a second pass so they always appear on top of other enemies.
     enemies.sort((a, b) => a.y - b.y);
-    for(let i=0;i<enemies.length;i++) enemies[i].draw();
+    const bossDraw = [];
+    for(let i=0;i<enemies.length;i++){
+      if(enemies[i].sizeClass === 'boss') bossDraw.push(enemies[i]);
+      else enemies[i].draw();
+    }
+    for(let i=0;i<bossDraw.length;i++) bossDraw[i].draw();
     for(let i=0;i<powerups.length;i++) powerups[i].draw();
 
     // Bottom defense wall in front of enemies and behind player
@@ -2054,6 +2069,12 @@
     get slowFieldTimer(){ return slowFieldTimer; },
     set slowFieldTimer(v){ slowFieldTimer = v; },
     get fieldProjectorCharge(){ return fieldProjectorCharge; },
-    set fieldProjectorCharge(v){ fieldProjectorCharge = v; }
+    set fieldProjectorCharge(v){ fieldProjectorCharge = v; },
+    get level(){ return level; },
+    set level(v){ level = v; },
+    get levelSpawned(){ return levelSpawned; },
+    set levelSpawned(v){ levelSpawned = v; },
+    get bossesSpawnedThisLevel(){ return bossesSpawnedThisLevel; },
+    set bossesSpawnedThisLevel(v){ bossesSpawnedThisLevel = v; }
   };
 })();
