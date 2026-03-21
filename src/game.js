@@ -14,6 +14,7 @@
   const gameContainer = document.getElementById('game-container');
   const FIELD_EFFECT_NAME = 'Slowing Field';
   const REBUFF_PUSH_VELOCITY = -300;
+  const REBUFF_RANGE = 70; // pixels above the wall that the shockwave/slow-field covers
   const MAX_ENEMY_LANE_T = 0.9;
   // Fraction of overlap to resolve each frame for enemy-enemy collisions.
   // < 1 allows enemies to remain slightly overlapping (dense clusters) while
@@ -565,21 +566,135 @@
     hit(){ if(this.locked){ this.shots--; if(this.shots<=0){ this.locked=false; } } }
     draw(){
       const p = this.getPerspective();
+      const cx = p.x + p.w/2;
+      const cy = p.y + p.h/2;
+      const r = Math.min(p.w, p.h) * 0.48;
+      const lockedAlpha = this.locked ? 0.72 : 1.0;
       ctx.save();
-      ctx.globalAlpha = this.locked ? 0.7 : 1.0;
-      ctx.fillStyle = this.type==='gun' ? '#ff0' : '#7de9ff';
-      ctx.fillRect(p.x, p.y, p.w, p.h);
-      // Left-lane event icon
-      ctx.fillStyle = '#222';
-      ctx.font = `${Math.floor(18*p.scale)}px Arial`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(this.type==='gun' ? '🔫' : '⚡', p.x+p.w/2, p.y+p.h/2);
+      ctx.globalAlpha = lockedAlpha;
+
+      if(this.type === 'gun'){
+        // Hexagonal amber gem with a bullet icon.
+        // Outer glow
+        const glow = ctx.createRadialGradient(cx, cy, r * 0.1, cx, cy, r * 1.7);
+        glow.addColorStop(0, 'rgba(255,180,0,0.50)');
+        glow.addColorStop(1, 'rgba(255,80,0,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 1.7, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Hex gem body
+        const gemGrad = ctx.createRadialGradient(cx - r * 0.15, cy - r * 0.2, 0, cx, cy, r);
+        gemGrad.addColorStop(0, '#ffe870');
+        gemGrad.addColorStop(0.5, '#ff9800');
+        gemGrad.addColorStop(1, '#b04a00');
+        ctx.fillStyle = gemGrad;
+        ctx.beginPath();
+        for(let i = 0; i < 6; i++){
+          const a = -Math.PI / 2 + (i / 6) * Math.PI * 2;
+          const hx = cx + Math.cos(a) * r;
+          const hy = cy + Math.sin(a) * r;
+          i === 0 ? ctx.moveTo(hx, hy) : ctx.lineTo(hx, hy);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        // Gem highlight
+        ctx.fillStyle = 'rgba(255,255,200,0.38)';
+        ctx.beginPath();
+        ctx.ellipse(cx - r * 0.18, cy - r * 0.28, r * 0.32, r * 0.15, -Math.PI / 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Bullet icon: pointed oval
+        const bh = r * 0.55;
+        const bw = r * 0.26;
+        ctx.fillStyle = 'rgba(255,242,200,0.92)';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - bh);
+        ctx.bezierCurveTo(cx + bw, cy - bh * 0.3, cx + bw, cy + bh * 0.45, cx, cy + bh * 0.6);
+        ctx.bezierCurveTo(cx - bw, cy + bh * 0.45, cx - bw, cy - bh * 0.3, cx, cy - bh);
+        ctx.fill();
+
+      } else {
+        // Circular cyan orb with a slow-field arc pattern.
+        // Outer glow
+        const glow = ctx.createRadialGradient(cx, cy, r * 0.1, cx, cy, r * 1.7);
+        glow.addColorStop(0, 'rgba(0,230,210,0.50)');
+        glow.addColorStop(1, 'rgba(0,100,200,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 1.7, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Orb body
+        const orbGrad = ctx.createRadialGradient(cx - r * 0.18, cy - r * 0.22, 0, cx, cy, r);
+        orbGrad.addColorStop(0, '#d8fff8');
+        orbGrad.addColorStop(0.4, '#28e8d0');
+        orbGrad.addColorStop(1, '#006c96');
+        ctx.fillStyle = orbGrad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Orb highlight
+        ctx.fillStyle = 'rgba(255,255,255,0.40)';
+        ctx.beginPath();
+        ctx.ellipse(cx - r * 0.22, cy - r * 0.30, r * 0.30, r * 0.14, -Math.PI / 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Slow-field icon: three concentric upward arcs (like a signal / slow-wave)
+        const arcBase = cy + r * 0.12;
+        ctx.lineCap = 'round';
+        ctx.lineWidth = Math.max(1, p.scale * 1.5);
+        for(let ring = 0; ring < 3; ring++){
+          const sr = r * (0.20 + ring * 0.21);
+          ctx.globalAlpha = lockedAlpha * (0.92 - ring * 0.22);
+          ctx.strokeStyle = 'rgba(255,255,255,0.90)';
+          ctx.beginPath();
+          ctx.arc(cx, arcBase, sr, -Math.PI * 0.78, -Math.PI * 0.22);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = lockedAlpha;
+        // Center dot
+        ctx.fillStyle = 'rgba(255,255,255,0.90)';
+        ctx.beginPath();
+        ctx.arc(cx, arcBase, r * 0.10, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Locked indicator: dashed ring + shot count
       if(this.locked){
-        ctx.strokeStyle='#f00'; ctx.lineWidth=3*p.scale;
-        ctx.strokeRect(p.x+3*p.scale, p.y+3*p.scale, p.w-6*p.scale, p.h-6*p.scale);
-        ctx.fillStyle='#fff'; ctx.font=`bold ${Math.floor(16*p.scale)}px Arial`;
-        ctx.fillText(this.shots, p.x+p.w/2, p.y+p.h-8*p.scale);
+        ctx.globalAlpha = 0.88;
+        ctx.strokeStyle = '#ff3333';
+        ctx.lineWidth = Math.max(1.5, p.scale * 2.2);
+        ctx.setLineDash([Math.max(2, p.scale * 3.5), Math.max(1.5, p.scale * 2)]);
+        ctx.beginPath();
+        if(this.type === 'gun'){
+          for(let i = 0; i < 6; i++){
+            const a = -Math.PI / 2 + (i / 6) * Math.PI * 2;
+            const hx = cx + Math.cos(a) * (r + Math.max(2, p.scale * 3));
+            const hy = cy + Math.sin(a) * (r + Math.max(2, p.scale * 3));
+            i === 0 ? ctx.moveTo(hx, hy) : ctx.lineTo(hx, hy);
+          }
+          ctx.closePath();
+        } else {
+          ctx.arc(cx, cy, r + Math.max(2, p.scale * 3), 0, Math.PI * 2);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Shot count label
+        ctx.globalAlpha = 1.0;
+        const fontSize = Math.floor(Math.max(8, 13 * p.scale));
+        ctx.font = `bold ${fontSize}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeStyle = 'rgba(0,0,0,0.70)';
+        ctx.lineWidth = Math.max(2, p.scale * 2.5);
+        ctx.strokeText(this.shots, cx, cy + r * 0.50);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(this.shots, cx, cy + r * 0.50);
       }
       ctx.restore();
     }
@@ -882,8 +997,7 @@
   function rebuffEnemiesAtWall(){
     const wallRect = getWallRect();
     // Extend the rebuff zone upward so enemies approaching the wall also get pushed.
-    const rebuffRange = 70;
-    const rebuffZone = { x: wallRect.x, y: wallRect.y - rebuffRange, w: wallRect.w, h: wallRect.h + rebuffRange };
+    const rebuffZone = { x: wallRect.x, y: wallRect.y - REBUFF_RANGE, w: wallRect.w, h: wallRect.h + REBUFF_RANGE };
     const rebuffDist = 50;
     let anyAffected = false;
     for(let i=0;i<enemies.length;i++){
@@ -900,7 +1014,7 @@
       wallRebuffEffects.push({
         cx: wallRect.x + wallRect.w / 2,
         cy: wallRect.y,
-        maxRadius: rebuffRange + rebuffDist,
+        maxRadius: REBUFF_RANGE + rebuffDist,
         age: 0,
         maxAge: 0.55
       });
@@ -940,22 +1054,15 @@
             ba.x += half; bb.x -= half;
           }
         } else {
-          // Enemies are mostly front-back: push trailing enemy back and
-          // give it a lateral nudge so it can work its way around the leader.
+          // Enemies are mostly front-back: allow them to stack in 3D depth order
+          // (back-to-front draw sorting handles occlusion). Only give a gentle
+          // lateral nudge so they naturally spread out when sharing the same column.
           const aCenterX = ba.x + ba.w / 2;
           const bCenterX = bb.x + bb.w / 2;
-          const pushY = overlapY * ENEMY_COLLISION_RESOLVE_FRACTION;
           if(ba.y <= bb.y){
-            // a is trailing (further from wall); push a back.
-            a.y -= pushY;
-            ba.y -= pushY;
-            // Nudge a to the side away from b so it finds a path around.
             const nudgeDir = aCenterX < bCenterX ? -1 : aCenterX > bCenterX ? 1 : (Math.random() < 0.5 ? -1 : 1);
             a.lateralVel = clamp(a.lateralVel + nudgeDir * 0.5, -1, 1);
           } else {
-            // b is trailing; push b back.
-            b.y -= pushY;
-            bb.y -= pushY;
             const nudgeDir = bCenterX < aCenterX ? -1 : bCenterX > aCenterX ? 1 : (Math.random() < 0.5 ? -1 : 1);
             b.lateralVel = clamp(b.lateralVel + nudgeDir * 0.5, -1, 1);
           }
@@ -1585,17 +1692,22 @@
       ctx.lineTo(laneBottomRight.x, laneBottomRight.y);
       ctx.stroke();
 
-      // Emission rays from projector into the slowed lane.
+      // Emission rays from projector in an even semi-circle, reaching only
+      // as far as the rebuff field boundary (REBUFF_RANGE pixels).
       ctx.globalAlpha = Math.min(0.78, 0.36 + pulse * 0.22);
       ctx.strokeStyle = 'rgba(134, 255, 244, 0.90)';
       ctx.lineWidth = 1.4;
-      for(let i=0;i<4;i++){
-        const t = 0.16 + i * 0.21;
-        const tx = lerp(laneTopLeft.x, laneBottomRight.x, t);
-        const ty = lerp(roadTopY, roadBottomY, t);
+      const numRays = 7;
+      for(let i = 0; i < numRays; i++){
+        // Fan evenly from left (-π) through straight-up (-π/2) to right (0).
+        const angle = -Math.PI + (Math.PI / (numRays - 1)) * i;
+        // Subtle per-ray length pulse so lines breathe slightly out of phase.
+        const rayLen = REBUFF_RANGE * (0.82 + 0.18 * Math.sin(accum * 3.5 + i * 0.9));
+        const tx = projector.x + Math.cos(angle) * rayLen;
+        const ty = (projector.y - 1) + Math.sin(angle) * rayLen;
         ctx.beginPath();
         ctx.moveTo(projector.x, projector.y - 1);
-        ctx.quadraticCurveTo(projector.x + 16 + i * 5, projector.y - 36 - i * 4, tx, ty);
+        ctx.lineTo(tx, ty);
         ctx.stroke();
       }
       ctx.restore();
@@ -1828,6 +1940,10 @@
     pause: togglePause,
     clearCaches: clearRuntimeCaches,
     tuning: GAME_TUNING,
-    levels: LEVEL_DEFS
+    levels: LEVEL_DEFS,
+    get slowFieldTimer(){ return slowFieldTimer; },
+    set slowFieldTimer(v){ slowFieldTimer = v; },
+    get fieldProjectorCharge(){ return fieldProjectorCharge; },
+    set fieldProjectorCharge(v){ fieldProjectorCharge = v; }
   };
 })();
