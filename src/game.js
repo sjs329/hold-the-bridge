@@ -13,6 +13,8 @@
   const statusEl = document.getElementById('status');
   const gameContainer = document.getElementById('game-container');
   const FIELD_EFFECT_NAME = 'Slowing Field';
+  const REBUFF_PUSH_VELOCITY = -300;
+  const MAX_ENEMY_LANE_T = 0.9;
 
   let W = 800, H = 600;
   const geometry = createGeometrySystem(W, H);
@@ -290,6 +292,7 @@
       this.damageSeed = Math.random() * 1000;
       this.hitFlash = 0;
       this.lateralVel = 0;
+      this.rebuffVelY = 0;
       this.resetAttackTimer();
     }
     resetAttackTimer(){ this.attackTimer = this.attackMin + Math.random()*(this.attackMax-this.attackMin); }
@@ -301,11 +304,18 @@
       // Move with perspective-aware speed: slower at distance, faster up close.
       const depth = getRoadBounds(this.y).depthT;
       this.y += this.speed * getEnemySlowMultiplier() * getPerspectiveSpeedMultiplier(depth) * dt;
+      // Apply shockwave push velocity (smooth backward motion instead of instant teleport).
+      if(this.rebuffVelY !== 0){
+        this.y += this.rebuffVelY * dt;
+        this.rebuffVelY *= Math.max(0, 1 - dt * 6);
+        if(Math.abs(this.rebuffVelY) < 0.1) this.rebuffVelY = 0;
+      }
       this.hitFlash = Math.max(0, this.hitFlash - dt * 6);
       if(this.y>H+50) this.dead=true;
       // Apply lateral steering so enemies can slide around each other.
+      // Cap at MAX_ENEMY_LANE_T to keep enemies within the player's shooting range.
       if(this.lateralVel !== 0){
-        this.laneT = clamp(this.laneT + this.lateralVel * dt, 0, 1);
+        this.laneT = clamp(this.laneT + this.lateralVel * dt, 0, MAX_ENEMY_LANE_T);
         this.lateralVel *= Math.max(0, 1 - dt * 2.5);
         if(Math.abs(this.lateralVel) < 0.005) this.lateralVel = 0;
       }
@@ -877,8 +887,7 @@
       if(enemy.dead) continue;
       const b = enemy._bounds || enemy.bounds();
       if(collide(b, rebuffZone)){
-        enemy.y -= rebuffDist;
-        if(enemy._bounds) enemy._bounds.y -= rebuffDist;
+        enemy.rebuffVelY = REBUFF_PUSH_VELOCITY;
         anyAffected = true;
       }
     }
@@ -918,12 +927,12 @@
           // Enemies are mostly side-by-side: push apart laterally.
           const half = overlapX / 2;
           if(ba.x < bb.x){
-            a.laneT = clamp(a.laneT - half / laneWidth, 0, 1);
-            b.laneT = clamp(b.laneT + half / laneWidth, 0, 1);
+            a.laneT = clamp(a.laneT - half / laneWidth, 0, MAX_ENEMY_LANE_T);
+            b.laneT = clamp(b.laneT + half / laneWidth, 0, MAX_ENEMY_LANE_T);
             ba.x -= half; bb.x += half;
           } else {
-            a.laneT = clamp(a.laneT + half / laneWidth, 0, 1);
-            b.laneT = clamp(b.laneT - half / laneWidth, 0, 1);
+            a.laneT = clamp(a.laneT + half / laneWidth, 0, MAX_ENEMY_LANE_T);
+            b.laneT = clamp(b.laneT - half / laneWidth, 0, MAX_ENEMY_LANE_T);
             ba.x += half; bb.x -= half;
           }
         } else {
@@ -1047,7 +1056,7 @@
           const speed = (difficulty.speedMin + Math.random()*(difficulty.speedMax - difficulty.speedMin)) * speedMult;
           const attackMin = difficulty.attackMin * attackMult;
           const attackMax = difficulty.attackMax * attackMult;
-          const enemy = new Enemy(clamp(t, 0, 1), y, speed, health, attackMin, attackMax, sizeClass);
+          const enemy = new Enemy(clamp(t, 0, MAX_ENEMY_LANE_T), y, speed, health, attackMin, attackMax, sizeClass);
           enemies.push(enemy);
           levelSpawned++;
         }
