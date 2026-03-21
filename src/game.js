@@ -15,6 +15,10 @@
   const FIELD_EFFECT_NAME = 'Slowing Field';
   const REBUFF_PUSH_VELOCITY = -300;
   const MAX_ENEMY_LANE_T = 0.9;
+  // Fraction of overlap to resolve each frame for enemy-enemy collisions.
+  // < 1 allows enemies to remain slightly overlapping (dense clusters) while
+  // still preventing them from fully passing through one another.
+  const ENEMY_COLLISION_RESOLVE_FRACTION = 0.5;
 
   let W = 800, H = 600;
   const geometry = createGeometrySystem(W, H);
@@ -925,7 +929,7 @@
 
         if(overlapX <= overlapY){
           // Enemies are mostly side-by-side: push apart laterally.
-          const half = overlapX / 2;
+          const half = overlapX * ENEMY_COLLISION_RESOLVE_FRACTION / 2;
           if(ba.x < bb.x){
             a.laneT = clamp(a.laneT - half / laneWidth, 0, MAX_ENEMY_LANE_T);
             b.laneT = clamp(b.laneT + half / laneWidth, 0, MAX_ENEMY_LANE_T);
@@ -940,17 +944,18 @@
           // give it a lateral nudge so it can work its way around the leader.
           const aCenterX = ba.x + ba.w / 2;
           const bCenterX = bb.x + bb.w / 2;
+          const pushY = overlapY * ENEMY_COLLISION_RESOLVE_FRACTION;
           if(ba.y <= bb.y){
             // a is trailing (further from wall); push a back.
-            a.y -= overlapY;
-            ba.y -= overlapY;
+            a.y -= pushY;
+            ba.y -= pushY;
             // Nudge a to the side away from b so it finds a path around.
             const nudgeDir = aCenterX < bCenterX ? -1 : aCenterX > bCenterX ? 1 : (Math.random() < 0.5 ? -1 : 1);
             a.lateralVel = clamp(a.lateralVel + nudgeDir * 0.5, -1, 1);
           } else {
             // b is trailing; push b back.
-            b.y -= overlapY;
-            bb.y -= overlapY;
+            b.y -= pushY;
+            bb.y -= pushY;
             const nudgeDir = bCenterX < aCenterX ? -1 : bCenterX > aCenterX ? 1 : (Math.random() < 0.5 ? -1 : 1);
             b.lateralVel = clamp(b.lateralVel + nudgeDir * 0.5, -1, 1);
           }
