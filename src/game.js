@@ -83,8 +83,28 @@
   }
   function resumeAudio(){
     const ac = getAudioContext();
-    if(ac && ac.state === 'suspended') ac.resume().catch(() => {});
+    if(!ac) return;
+    if(ac.state === 'suspended') ac.resume().catch(() => {});
+    // iOS Safari requires starting an actual audio node within the user gesture
+    // to fully unlock the AudioContext. Play a silent 1-frame buffer to satisfy this.
+    try {
+      const buf = ac.createBuffer(1, 1, ac.sampleRate);
+      const src = ac.createBufferSource();
+      src.buffer = buf;
+      src.connect(ac.destination);
+      src.start(0);
+    } catch(e) {}
   }
+
+  // Re-resume audio when the tab returns to the foreground.
+  // Use audioCtx directly (not getAudioContext()) to avoid creating a new context
+  // outside of a user gesture, which would just start suspended and require interaction
+  // to unlock anyway.
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible' && audioCtx && audioCtx.state === 'suspended'){
+      audioCtx.resume().catch(() => {});
+    }
+  });
 
   function playTone(frequency, type, gainPeak, attackTime, decayTime, startTime){
     const ac = getAudioContext();
