@@ -71,46 +71,55 @@
   // Audio
   let audioCtx = null;
   function getAudioContext(){
-    if(!audioCtx){
-      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ audioCtx = null; }
+    if(!audioCtx || audioCtx.state === 'closed'){
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        audioCtx.addEventListener('statechange', () => {
+          if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+        });
+      } catch(e){ audioCtx = null; }
     }
     return audioCtx;
   }
   function resumeAudio(){
     const ac = getAudioContext();
-    if(ac && ac.state === 'suspended') ac.resume();
+    if(ac && ac.state === 'suspended') ac.resume().catch(() => {});
   }
 
   function playTone(frequency, type, gainPeak, attackTime, decayTime, startTime){
     const ac = getAudioContext();
     if(!ac) return;
-    const osc = ac.createOscillator();
-    const gain = ac.createGain();
-    osc.connect(gain);
-    gain.connect(ac.destination);
-    osc.type = type;
-    osc.frequency.setValueAtTime(frequency, startTime);
-    gain.gain.setValueAtTime(0, startTime);
-    gain.gain.linearRampToValueAtTime(gainPeak, startTime + attackTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, startTime + attackTime + decayTime);
-    osc.start(startTime);
-    osc.stop(startTime + attackTime + decayTime + 0.05);
+    try {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      osc.type = type;
+      osc.frequency.setValueAtTime(frequency, startTime);
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(gainPeak, startTime + attackTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + attackTime + decayTime);
+      osc.start(startTime);
+      osc.stop(startTime + attackTime + decayTime + 0.05);
+    } catch(e) { console.warn('playTone error:', e); }
   }
 
   function playFreqSweep(freqStart, freqEnd, type, gainPeak, duration, startTime){
     const ac = getAudioContext();
     if(!ac) return;
-    const osc = ac.createOscillator();
-    const gain = ac.createGain();
-    osc.connect(gain);
-    gain.connect(ac.destination);
-    osc.type = type;
-    osc.frequency.setValueAtTime(freqStart, startTime);
-    osc.frequency.exponentialRampToValueAtTime(freqEnd, startTime + duration);
-    gain.gain.setValueAtTime(gainPeak, startTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-    osc.start(startTime);
-    osc.stop(startTime + duration + 0.05);
+    try {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      osc.type = type;
+      osc.frequency.setValueAtTime(freqStart, startTime);
+      osc.frequency.exponentialRampToValueAtTime(freqEnd, startTime + duration);
+      gain.gain.setValueAtTime(gainPeak, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+      osc.start(startTime);
+      osc.stop(startTime + duration + 0.05);
+    } catch(e) { console.warn('playFreqSweep error:', e); }
   }
 
   function sfxPowerupUnlock(){
@@ -155,7 +164,7 @@
     if(!ac) return;
     const t = ac.currentTime;
     // Quick pew: short downward sawtooth sweep
-    playFreqSweep(520, 180, 'sawtooth', 0.04, 0.07, t);
+    playFreqSweep(520, 180, 'sawtooth', 0.09, 0.07, t);
   }
 
   function sfxEnemyHit(){
