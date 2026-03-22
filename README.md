@@ -44,5 +44,5 @@ GitHub Pages deployment:
   - `https://<your-username>.github.io/<repo-name>/`
 
 Next steps:
-- Add sounds and sprites
+- Add sprites
 - Add enemy variety and boss waves
