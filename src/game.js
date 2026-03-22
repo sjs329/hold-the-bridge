@@ -68,6 +68,88 @@
   resize();
   window.addEventListener('resize', resize);
 
+  // Audio
+  let audioCtx = null;
+  function getAudioContext(){
+    if(!audioCtx){
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ audioCtx = null; }
+    }
+    return audioCtx;
+  }
+  function resumeAudio(){
+    const ac = getAudioContext();
+    if(ac && ac.state === 'suspended') ac.resume();
+  }
+
+  function playTone(frequency, type, gainPeak, attackTime, decayTime, startTime){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(frequency, startTime);
+    gain.gain.setValueAtTime(0, startTime);
+    gain.gain.linearRampToValueAtTime(gainPeak, startTime + attackTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, startTime + attackTime + decayTime);
+    osc.start(startTime);
+    osc.stop(startTime + attackTime + decayTime + 0.05);
+  }
+
+  function playFreqSweep(freqStart, freqEnd, type, gainPeak, duration, startTime){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freqStart, startTime);
+    osc.frequency.exponentialRampToValueAtTime(freqEnd, startTime + duration);
+    gain.gain.setValueAtTime(gainPeak, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+    osc.start(startTime);
+    osc.stop(startTime + duration + 0.05);
+  }
+
+  function sfxPowerupUnlock(){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const t = ac.currentTime;
+    playTone(880, 'sine', 0.18, 0.01, 0.18, t);
+    playTone(1100, 'sine', 0.12, 0.01, 0.15, t + 0.06);
+  }
+
+  function sfxMultiShotPickup(){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const t = ac.currentTime;
+    // Three-note ascending arpeggio
+    playTone(523, 'triangle', 0.20, 0.01, 0.12, t);
+    playTone(659, 'triangle', 0.20, 0.01, 0.12, t + 0.08);
+    playTone(784, 'triangle', 0.22, 0.01, 0.20, t + 0.16);
+  }
+
+  function sfxRateBoostPickup(){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const t = ac.currentTime;
+    // Rising frequency sweep (zip/whoosh feel)
+    playFreqSweep(300, 1200, 'sawtooth', 0.10, 0.18, t);
+    playTone(1200, 'sine', 0.14, 0.01, 0.14, t + 0.12);
+  }
+
+  function sfxFieldPickup(){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const t = ac.currentTime;
+    // Low resonant thrum
+    playTone(110, 'sine', 0.22, 0.03, 0.35, t);
+    playTone(220, 'sine', 0.12, 0.03, 0.28, t + 0.04);
+    playTone(440, 'sine', 0.08, 0.02, 0.20, t + 0.10);
+  }
+
   // Input
   const keys = {};
   let pointerActive = false;
@@ -87,6 +169,7 @@
 
   // Start game on any key; Space toggles pause while running.
   window.addEventListener('keydown', e=>{
+    resumeAudio();
     if(e.code==='Space' && running){
       e.preventDefault();
       togglePause();
@@ -99,6 +182,7 @@
 
   canvas.addEventListener('pointerdown', e=>{
     if(e.button !== undefined && e.button !== 0) return;
+    resumeAudio();
     pointerActive = true;
     pointerX = toCanvasX(e.clientX);
     if(!running) startGame();
@@ -643,10 +727,12 @@
   }
 
   class PowerUp{
-    constructor(laneT, y, type, shots){
+    constructor(laneT, y, type, shots, subtype){
       this.laneT = laneT; // 0-1 position in lane
       this.y = y;
       this.type = type;
+      // For 'gun' type: 'multishot' or 'rate'
+      this.subtype = subtype || (type === 'gun' ? 'rate' : null);
       this.speed = 90;
       this.dead = false;
       this.locked = true;
@@ -662,7 +748,7 @@
       this.y += this.speed * getPerspectiveSpeedMultiplier(depth) * dt;
       if(this.y>H+50) this.dead=true;
     }
-    hit(){ if(this.locked){ this.shots--; if(this.shots<=0){ this.locked=false; } } }
+    hit(){ if(this.locked){ this.shots--; if(this.shots<=0){ this.locked=false; sfxPowerupUnlock(); } } }
     draw(){
       const p = this.getPerspective();
       const cx = p.x + p.w/2;
@@ -672,8 +758,8 @@
       ctx.save();
       ctx.globalAlpha = lockedAlpha;
 
-      if(this.type === 'gun'){
-        // Hexagonal amber gem with a bullet icon.
+      if(this.type === 'gun' && this.subtype === 'multishot'){
+        // Hexagonal amber gem — multi-bullet fan icon.
         // Outer glow
         const glow = ctx.createRadialGradient(cx, cy, r * 0.1, cx, cy, r * 1.7);
         glow.addColorStop(0, 'rgba(255,180,0,0.50)');
@@ -705,14 +791,67 @@
         ctx.ellipse(cx - r * 0.18, cy - r * 0.28, r * 0.32, r * 0.15, -Math.PI / 4, 0, Math.PI * 2);
         ctx.fill();
 
-        // Bullet icon: pointed oval
-        const bh = r * 0.55;
-        const bw = r * 0.26;
+        // Three-bullet fan icon
+        const bh = r * 0.46;
+        const bw = r * 0.20;
+        const angles = [-0.32, 0, 0.32];
         ctx.fillStyle = 'rgba(255,242,200,0.92)';
+        for(let k = 0; k < 3; k++){
+          const ang = angles[k];
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(ang);
+          ctx.beginPath();
+          ctx.moveTo(0, -bh);
+          ctx.bezierCurveTo(bw, -bh * 0.3, bw, bh * 0.45, 0, bh * 0.6);
+          ctx.bezierCurveTo(-bw, bh * 0.45, -bw, -bh * 0.3, 0, -bh);
+          ctx.fill();
+          ctx.restore();
+        }
+
+      } else if(this.type === 'gun' && this.subtype === 'rate'){
+        // Diamond (rotated square) lime-green gem — lightning bolt icon.
+        // Outer glow
+        const glow = ctx.createRadialGradient(cx, cy, r * 0.1, cx, cy, r * 1.7);
+        glow.addColorStop(0, 'rgba(100,255,80,0.55)');
+        glow.addColorStop(1, 'rgba(0,180,60,0)');
+        ctx.fillStyle = glow;
         ctx.beginPath();
-        ctx.moveTo(cx, cy - bh);
-        ctx.bezierCurveTo(cx + bw, cy - bh * 0.3, cx + bw, cy + bh * 0.45, cx, cy + bh * 0.6);
-        ctx.bezierCurveTo(cx - bw, cy + bh * 0.45, cx - bw, cy - bh * 0.3, cx, cy - bh);
+        ctx.arc(cx, cy, r * 1.7, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Diamond gem body
+        const gemGrad = ctx.createRadialGradient(cx - r * 0.15, cy - r * 0.2, 0, cx, cy, r);
+        gemGrad.addColorStop(0, '#e8ffb0');
+        gemGrad.addColorStop(0.45, '#66ff44');
+        gemGrad.addColorStop(1, '#1a7a00');
+        ctx.fillStyle = gemGrad;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - r);      // top
+        ctx.lineTo(cx + r, cy);      // right
+        ctx.lineTo(cx, cy + r);      // bottom
+        ctx.lineTo(cx - r, cy);      // left
+        ctx.closePath();
+        ctx.fill();
+
+        // Diamond highlight
+        ctx.fillStyle = 'rgba(220,255,200,0.40)';
+        ctx.beginPath();
+        ctx.ellipse(cx - r * 0.18, cy - r * 0.28, r * 0.30, r * 0.13, -Math.PI / 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Lightning bolt icon
+        ctx.fillStyle = 'rgba(230,255,180,0.95)';
+        ctx.beginPath();
+        const lx = cx, ly = cy;
+        const ls = r * 0.52;
+        ctx.moveTo(lx + ls * 0.18, ly - ls);
+        ctx.lineTo(lx - ls * 0.10, ly + ls * 0.08);
+        ctx.lineTo(lx + ls * 0.14, ly + ls * 0.08);
+        ctx.lineTo(lx - ls * 0.18, ly + ls);
+        ctx.lineTo(lx + ls * 0.10, ly - ls * 0.08);
+        ctx.lineTo(lx - ls * 0.14, ly - ls * 0.08);
+        ctx.closePath();
         ctx.fill();
 
       } else {
@@ -769,13 +908,22 @@
         ctx.lineWidth = Math.max(1.5, p.scale * 2.2);
         ctx.setLineDash([Math.max(2, p.scale * 3.5), Math.max(1.5, p.scale * 2)]);
         ctx.beginPath();
-        if(this.type === 'gun'){
+        if(this.type === 'gun' && this.subtype === 'multishot'){
+          // Hex outline
           for(let i = 0; i < 6; i++){
             const a = -Math.PI / 2 + (i / 6) * Math.PI * 2;
             const hx = cx + Math.cos(a) * (r + Math.max(2, p.scale * 3));
             const hy = cy + Math.sin(a) * (r + Math.max(2, p.scale * 3));
             i === 0 ? ctx.moveTo(hx, hy) : ctx.lineTo(hx, hy);
           }
+          ctx.closePath();
+        } else if(this.type === 'gun' && this.subtype === 'rate'){
+          // Diamond outline
+          const rd = r + Math.max(2, p.scale * 3);
+          ctx.moveTo(cx, cy - rd);
+          ctx.lineTo(cx + rd, cy);
+          ctx.lineTo(cx, cy + rd);
+          ctx.lineTo(cx - rd, cy);
           ctx.closePath();
         } else {
           ctx.arc(cx, cy, r + Math.max(2, p.scale * 3), 0, Math.PI * 2);
@@ -940,27 +1088,49 @@
     }
   }
 
-  function applyGunPowerup(gunCap){
+  function applyGunPowerup(gunCap, subtype){
     const canGainMulti = player.multiShot < gunCap.gunMaxMultiShot;
     const canGainMultiThisLevel = levelMultiShotUpgrades < gunCap.gunMaxMultiUpgradesPerLevel;
     const canGainRate = player.shootDelay > gunCap.gunShootDelayFloor + 0.001;
 
-    if(canGainMulti && canGainMultiThisLevel){
-      const shouldGainMulti = !canGainRate || Math.random() < gunCap.gunMultiShotChance;
-      if(shouldGainMulti){
+    if(subtype === 'multishot'){
+      if(canGainMulti && canGainMultiThisLevel){
         player.multiShot++;
         levelMultiShotUpgrades++;
         showTransientStatus(`Multi-Shot! Now shooting ${player.multiShot}!`, 1.2);
         notifPopup = 'Multi-Shot';
+        sfxMultiShotPickup();
         return;
       }
-    }
+      // Fall back to rate boost if multi-shot is maxed
+      if(canGainRate){
+        player.shootDelay = Math.max(gunCap.gunShootDelayFloor, player.shootDelay - gunCap.gunShootDelayBoost);
+        showTransientStatus('Gun Power-Up! Faster shooting!', 1.2);
+        notifPopup = 'Gun Boost';
+        sfxRateBoostPickup();
+        return;
+      }
+    } else {
+      // subtype === 'rate' (or legacy fallback)
+      if(canGainMulti && canGainMultiThisLevel){
+        const shouldGainMulti = !canGainRate || Math.random() < gunCap.gunMultiShotChance;
+        if(shouldGainMulti){
+          player.multiShot++;
+          levelMultiShotUpgrades++;
+          showTransientStatus(`Multi-Shot! Now shooting ${player.multiShot}!`, 1.2);
+          notifPopup = 'Multi-Shot';
+          sfxMultiShotPickup();
+          return;
+        }
+      }
 
-    if(canGainRate){
-      player.shootDelay = Math.max(gunCap.gunShootDelayFloor, player.shootDelay - gunCap.gunShootDelayBoost);
-      showTransientStatus('Gun Power-Up! Faster shooting!', 1.2);
-      notifPopup = 'Gun Boost';
-      return;
+      if(canGainRate){
+        player.shootDelay = Math.max(gunCap.gunShootDelayFloor, player.shootDelay - gunCap.gunShootDelayBoost);
+        showTransientStatus('Gun Power-Up! Faster shooting!', 1.2);
+        notifPopup = 'Gun Boost';
+        sfxRateBoostPickup();
+        return;
+      }
     }
 
     if(canGainMulti && !canGainMultiThisLevel){
@@ -973,10 +1143,10 @@
     notifPopup = 'Maxed';
   }
 
-  function applyUnlockedPowerup(type, gunCap, sourcePoint){
+  function applyUnlockedPowerup(type, subtype, gunCap, sourcePoint){
     triggerPickupFlash(0.3);
     if(type === 'gun'){
-      applyGunPowerup(gunCap);
+      applyGunPowerup(gunCap, subtype);
     } else {
       slowFieldTimer = Math.max(slowFieldTimer, GAME_TUNING.leftLane.fieldDuration);
       if(sourcePoint) queueFieldChargeTransfer(sourcePoint.x, sourcePoint.y);
@@ -984,6 +1154,7 @@
       rebuffEnemiesAtWall();
       showTransientStatus(`${FIELD_EFFECT_NAME} Active! Horde Slowed`, 1.2);
       notifPopup = 'Field Online';
+      sfxFieldPickup();
     }
     notifPopupTimer = 1.2;
     updateUI();
@@ -1038,7 +1209,7 @@
             x: powerup._bounds.x + powerup._bounds.w * 0.5,
             y: powerup._bounds.y + powerup._bounds.h * 0.5
           };
-          applyUnlockedPowerup(powerup.type, gunCap, pickupPoint);
+          applyUnlockedPowerup(powerup.type, powerup.subtype, gunCap, pickupPoint);
         }
         break;
       }
@@ -1303,7 +1474,8 @@
       const type = Math.random() < gunChance ? 'gun' : 'field';
       const baseShots = difficulty.lockBase + Math.floor(Math.random()*(difficulty.lockRange + 1));
       const shots = type==='gun' ? baseShots : Math.max(2, baseShots - 1);
-      powerups.push(new PowerUp(t, y, type, shots));
+      const subtype = type === 'gun' ? (Math.random() < GAME_TUNING.gun.multiShotChance ? 'multishot' : 'rate') : null;
+      powerups.push(new PowerUp(t, y, type, shots, subtype));
     }
   }
 
