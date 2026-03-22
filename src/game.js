@@ -150,6 +150,81 @@
     playTone(440, 'sine', 0.08, 0.02, 0.20, t + 0.10);
   }
 
+  function sfxShoot(){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const t = ac.currentTime;
+    // Quick pew: short downward sawtooth sweep
+    playFreqSweep(520, 180, 'sawtooth', 0.04, 0.07, t);
+  }
+
+  function sfxEnemyHit(){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const t = ac.currentTime;
+    // Brief impact thud
+    playFreqSweep(200, 80, 'square', 0.06, 0.08, t);
+  }
+
+  function sfxEnemyDeath(){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const t = ac.currentTime;
+    // Short crunch/explosion: descending sweep
+    playFreqSweep(300, 40, 'sawtooth', 0.14, 0.22, t);
+    playTone(120, 'sine', 0.08, 0.01, 0.18, t + 0.03);
+  }
+
+  function sfxWallHit(){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const t = ac.currentTime;
+    // Deep thud when enemy chips wall HP
+    playTone(80, 'sine', 0.18, 0.005, 0.18, t);
+    playFreqSweep(180, 60, 'sawtooth', 0.08, 0.14, t);
+  }
+
+  function sfxWallBroken(){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const t = ac.currentTime;
+    // Alarm: descending tritone cluster then low rumble
+    playTone(740, 'sawtooth', 0.18, 0.01, 0.18, t);
+    playTone(523, 'sawtooth', 0.18, 0.01, 0.18, t + 0.14);
+    playTone(370, 'sawtooth', 0.20, 0.01, 0.28, t + 0.28);
+    playTone(60, 'sine', 0.22, 0.02, 0.55, t + 0.30);
+  }
+
+  function sfxPlayerHit(){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const t = ac.currentTime;
+    // Heavy impact + descending hit tone
+    playFreqSweep(440, 80, 'sawtooth', 0.20, 0.30, t);
+    playTone(150, 'sine', 0.14, 0.01, 0.30, t + 0.05);
+  }
+
+  function sfxGameOver(){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const t = ac.currentTime;
+    // Three descending notes
+    playTone(494, 'triangle', 0.22, 0.01, 0.25, t);
+    playTone(370, 'triangle', 0.22, 0.01, 0.25, t + 0.22);
+    playTone(247, 'triangle', 0.24, 0.01, 0.55, t + 0.44);
+  }
+
+  function sfxLevelUp(){
+    const ac = getAudioContext();
+    if(!ac) return;
+    const t = ac.currentTime;
+    // Four-note ascending fanfare
+    playTone(523, 'triangle', 0.18, 0.01, 0.14, t);
+    playTone(659, 'triangle', 0.18, 0.01, 0.14, t + 0.12);
+    playTone(784, 'triangle', 0.18, 0.01, 0.14, t + 0.24);
+    playTone(1047, 'triangle', 0.22, 0.01, 0.35, t + 0.36);
+  }
+
   // Input
   const keys = {};
   let pointerActive = false;
@@ -259,6 +334,7 @@
           bullets.push(new Bullet(center+offset, this.y));
         }
       }
+      sfxShoot();
     }
     draw(){
       const cx = this.x + this.w/2;
@@ -992,6 +1068,7 @@
     const cfg = GAME_TUNING.transition;
     levelTransitionTimer = cfg.duration;
     levelTransitionLabel = `Level ${newLevel}`;
+    sfxLevelUp();
 
     if(cfg.clearEnemiesOnTransition){
       enemies = [];
@@ -1185,7 +1262,8 @@
 
         enemy.hit();
         bullet.dead = true;
-        if(enemy.dead) needsUIRefresh = true;
+        if(enemy.dead){ sfxEnemyDeath(); needsUIRefresh = true; }
+        else { sfxEnemyHit(); }
         break;
       }
 
@@ -1242,6 +1320,9 @@
           if(wallHealth <= 0){
             wallBroken = true;
             showTransientStatus('Wall Broken!', 0.9);
+            sfxWallBroken();
+          } else {
+            sfxWallHit();
           }
           needsUIRefresh = true;
         }
@@ -1252,6 +1333,7 @@
         enemy.dead = true;
         player.lives--;
         needsUIRefresh = true;
+        sfxPlayerHit();
         if(player.lives <= 0){
           endGame();
           break;
@@ -2208,6 +2290,7 @@
     updatePauseButton();
     statusEl.style.display = 'block';
     statusEl.textContent = 'Game Over — Press any key or tap to Restart';
+    sfxGameOver();
   }
 
   function updateUI(){
