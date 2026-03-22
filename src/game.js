@@ -1111,24 +1111,20 @@
         return;
       }
     } else {
-      // subtype === 'rate' (or legacy fallback)
-      if(canGainMulti && canGainMultiThisLevel){
-        const shouldGainMulti = !canGainRate || Math.random() < gunCap.gunMultiShotChance;
-        if(shouldGainMulti){
-          player.multiShot++;
-          levelMultiShotUpgrades++;
-          showTransientStatus(`Multi-Shot! Now shooting ${player.multiShot}!`, 1.2);
-          notifPopup = 'Multi-Shot';
-          sfxMultiShotPickup();
-          return;
-        }
-      }
-
+      // subtype === 'rate': prioritise rate boost, fall back to multi-shot
       if(canGainRate){
         player.shootDelay = Math.max(gunCap.gunShootDelayFloor, player.shootDelay - gunCap.gunShootDelayBoost);
         showTransientStatus('Gun Power-Up! Faster shooting!', 1.2);
         notifPopup = 'Gun Boost';
         sfxRateBoostPickup();
+        return;
+      }
+      if(canGainMulti && canGainMultiThisLevel){
+        player.multiShot++;
+        levelMultiShotUpgrades++;
+        showTransientStatus(`Multi-Shot! Now shooting ${player.multiShot}!`, 1.2);
+        notifPopup = 'Multi-Shot';
+        sfxMultiShotPickup();
         return;
       }
     }
@@ -1474,7 +1470,7 @@
       const type = Math.random() < gunChance ? 'gun' : 'field';
       const baseShots = difficulty.lockBase + Math.floor(Math.random()*(difficulty.lockRange + 1));
       const shots = type==='gun' ? baseShots : Math.max(2, baseShots - 1);
-      const subtype = type === 'gun' ? (Math.random() < GAME_TUNING.gun.multiShotChance ? 'multishot' : 'rate') : null;
+      const subtype = type === 'gun' ? (Math.random() < difficulty.gunMultiShotChance ? 'multishot' : 'rate') : null;
       powerups.push(new PowerUp(t, y, type, shots, subtype));
     }
   }
