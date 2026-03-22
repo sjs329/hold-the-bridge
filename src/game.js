@@ -85,8 +85,9 @@
     const ac = getAudioContext();
     if(!ac) return;
     if(ac.state === 'suspended') ac.resume().catch(() => {});
-    // iOS Safari requires starting an actual audio node within the user gesture
-    // to fully unlock the AudioContext. Play a silent 1-frame buffer to satisfy this.
+    // Mobile browsers (Chrome on Android, iOS Safari) require starting an actual
+    // audio node within the user gesture to fully unlock the AudioContext.
+    // Play a silent 1-frame buffer to satisfy this requirement.
     try {
       const buf = ac.createBuffer(1, 1, ac.sampleRate);
       const src = ac.createBufferSource();
